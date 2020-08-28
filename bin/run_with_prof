@@ -1,0 +1,70 @@
+#!/usr/bin/env ksh
+
+set -o nounset
+
+function message {
+  print "$*" >&2
+}
+
+progname=${0##*/}
+
+if (( $# < 2 )); then
+  message "Usage: $progname \"command_to_run ...\" program_to_profile ..."
+  exit 2
+fi
+
+command_to_run=$1
+shift
+
+tmpdir="/tmp/${progname}_$$"
+
+if ! mkdir $tmpdir
+then
+  message "Error: cannot create temporary directory $tmpdir"
+  exit 1
+fi
+
+for cmd in "$@"
+do
+  realcmd=$(whence -p $cmd)
+
+  if [[ $? != 0 ]]; then
+    message "Error: cannot find $cmd on search path"
+    rm -rf $tmpdir
+    exit 1
+  elif [[ $realcmd != /* ]]; then
+    # Make sure $realcmd has an absolute path
+    realcmd="$PWD/$realcmd"
+  fi
+
+  print "#!/usr/bin/env ksh
+
+integer count=1
+
+while true; do
+  gprof_out=${cmd}_\${count}.gprof
+
+  if [[ ! -e \$gprof_out ]]; then
+    break
+  fi
+
+  (( count++ ))
+done
+
+$realcmd \"\$@\"
+
+if [[ -e gmon.out ]]; then
+  gprof $realcmd gmon.out > \$gprof_out
+  rm gmon.out
+fi
+" > $tmpdir/$cmd
+
+  chmod +x $tmpdir/$cmd
+done
+
+export PATH="$tmpdir:$PATH"
+
+$command_to_run
+
+rm -rf $tmpdir
+

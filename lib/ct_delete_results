@@ -1,0 +1,49 @@
+# Delete the result directories for specified tests in
+# a result set; also delete any corresponding tool
+# (i.e. parent) directory that becomes empty
+
+function ct_delete_results {
+  # $1 = name of result set
+  # $2 = name of associative array produced by ct_get_tests
+
+  typeset resultset=$1
+  nameref tests=$2
+
+  typeset tool     # Name of current tool
+  typeset test     # Name of current test for this tool
+  typeset tooldir  # Directory containing results for this tool
+
+  for tool in ${!tests[@]}
+  do
+    tooldir=$CIAOTEST_RESULTS/$resultset/$tool
+
+    # If $tooldir doesn't exist, move on to next tool
+    if [[ ! -d $tooldir ]]; then
+      continue
+    fi
+
+    for test in ${tests[$tool]}
+    do
+      # Remove directory for this test; die on failure
+
+      if ! rm -rf $tooldir/$test
+      then
+	ct_error "$tool/$test: cannot remove results"
+	return 1
+      fi
+    done
+
+    # If tool directory is empty (or contains only empty
+    # subdirectories), remove it; warn on failure
+
+    if [[ -z $(find $tooldir \! -type d -print) ]]; then
+      if ! rm -rf $tooldir
+      then
+	ct_warning "cannot remove empty directory $tooldir"
+      fi
+    fi
+  done
+
+  return 0
+}
+

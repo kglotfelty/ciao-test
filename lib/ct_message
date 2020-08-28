@@ -1,0 +1,7 @@
+# Write message on stderr
+
+function ct_message {
+  typeset message="$*"
+  print "$message" >&2
+}
+

@@ -1,0 +1,67 @@
+#!/usr/bin/env ksh
+
+
+#
+# Print configuration info to stdout
+#
+# Usage:  print_config
+#
+
+# Disallow uninitialized variables
+set -o nounset
+
+# Print host name and hardware/OS info
+print "host: ${HOST:-unknown} ($(uname -mprs))"
+
+# If $ASCDS_INSTALL is set, print CIAO configuration info;
+# otherwise, report that CIAO was not found
+
+if [[ ${ASCDS_INSTALL:-0} == 0 ]]; then
+  print "No CIAO configuration"
+else
+  # Print the CIAO "VERSION" file or a message saying
+  # it wasn't found
+
+  ciaover=$ASCDS_INSTALL/VERSION
+
+  if [[ -e $ciaover ]]; then
+    cat $ciaover
+  else
+    print "cannot determine CIAO version"
+  fi
+
+  # Print CIAO installation directory
+  print "bin dir: $ASCDS_INSTALL"
+
+  # Print CALDB info or a message saying it can't
+  # be determined
+
+  if [[ ${CALDB:-0} == 0 ]]; then
+    print "cannot find CALDB installation"
+  else
+    # Print CALDB version
+
+    caldbtestver=$CALDB/docs/chandra/caldb_version/caldb_testver.txt
+    caldbver=$CALDB/docs/chandra/caldb_version/caldb_version.txt
+
+    if [[ -e $caldbtestver ]]; then
+      # Print the version number from the last line of
+      # "caldb_testver.txt"
+      print "CALDB version $(tail -1 $caldbtestver | cut -d' ' -f1)"
+    elif [[ -e $caldbver ]]; then
+      # Print the version number from the last line of
+      # "caldb_version.txt"
+      print "CALDB version $(tail -1 $caldbver | cut -d' ' -f1)"
+    else
+      print "cannot determine CALDB version"
+    fi
+
+    # Print CALDB directory
+    print "cal dir: $CALDB"
+  fi
+
+fi
+
+# Indicate success
+exit 0
+

@@ -1,0 +1,171 @@
+#!/usr/bin/env ksh
+
+#
+# Print the info needed to manually run and debug a test
+#
+# Usage:
+#    print_test [resultset ...] tool test
+#
+#    Options:
+#        -a             Print .AUX file, too (if it exists)
+#        -r resultset   Print log file for specified result set
+#
+#
+#    Edited 7/16/08 RND - "-a" option is always "on"
+#
+
+
+
+# Disallow uninitialized variables
+set -o nounset
+
+# Use "ct" compound variable
+ct_define_ct
+
+# Store script name
+progname=${0##*/}
+
+USAGE="Usage: $progname [-a] [-r resultset] [resultset ...] tool test"
+
+aux=1
+
+# Process options
+while getopts ":ar:" opt
+do
+  case $opt in
+#    a  )  aux=1 ;;
+    r  )  outputset=$OPTARG ;;
+    # Die on invalid option
+    \? )  ct_message "$USAGE"
+	  exit 2 ;;
+  esac
+done
+shift $(($OPTIND - 1))
+
+# Check usage
+if (( $# < 2 )); then
+  ct_message "$USAGE"
+  exit 2
+fi
+
+# Store names of result sets (if any)
+
+set -A resultsets  # Array of result set names
+
+while (( $# > 2 ))
+do
+  resultsets+=($1)
+  shift
+done
+
+# Store and verify other arguments
+
+tool=$1
+tooldir=$CIAOTEST_TESTS/$tool
+test=$2
+testfile=$tooldir/${test}.${ct.main}
+
+if [[ ! -d $tooldir ]]; then
+  # No directory for this tool, so die
+  ct_error "$tool: invalid tool name"
+  exit 1
+fi
+
+if [[ ! -e $testfile ]]; then
+  # No test with this name, so die
+  ct_error "$tool/$test: test not found"
+  exit 1
+fi
+
+# If "-r resultset" was given, check if a log file for this
+# test exists in the specified result set; die if it doesn't
+
+if [[ ${outputset:-0} != 0 ]]; then
+  outputlog=$CIAOTEST_RESULTS/$outputset/$tool/$test/${ct.log}
+
+  if [[ ! -e $outputlog ]]; then
+    ct_error "cannot find log file for result set $outputset"
+    exit 1
+  fi
+fi
+
+# If result sets have been specified, print the history
+# info and location of output files for each set
+
+if (( ${#resultsets[*]} > 0 )); then
+  for rset in ${resultsets[*]}
+  do
+    rdir=$CIAOTEST_RESULTS/$rset               # Root directory for result set
+    rinfo=$rdir/${ct.info}                     # History file for result set
+    testinfo=$rdir/$tool/$test/${ct.testinfo}  # Info file for test
+
+    # Print name of result set
+    print "** Result set: '$rset' **\n"
+
+    # If there's a test info file or history file, extract and
+    # print the appropriate information
+
+    if [[ -e $testinfo ]]; then
+      rinfo=$testinfo
+    fi
+      
+    if [[ -e $rinfo ]]; then
+      # Extract lines starting with 'bin dir: ',
+      # 'cal dir: ', and 'host: '; pipe the output
+      # through sort and uniq to filter out duplicate lines
+
+      bindir=$(grep 'bin dir: ' $rinfo | sort | uniq)
+      caldir=$(grep 'cal dir: ' $rinfo | sort | uniq)
+      host=$(grep 'host: ' $rinfo | sort | uniq)
+
+      # Print any extracted lines
+
+      for rlines in "$bindir" "$caldir" "$host"
+      do
+        if [[ -n $rlines ]]; then
+          print "$rlines"
+        fi
+      done
+    fi
+
+    # Print location of output files
+    print "output files: $rdir/$tool/$test\n"
+  done
+
+  # Print title for commands section
+  print "** Commands **\n"
+fi
+
+# Read in contents of .MAIN file
+testlines="$(< $testfile)"
+
+# If "-a" was specified and .AUX file exists, read
+# in its contents
+
+if [[ ${aux:-0} == 1 ]]; then
+  auxfile=${testfile%.${ct.main}}.${ct.aux}
+
+  if [[ -e $auxfile ]]; then
+    testlines+="\n\n$(< $auxfile)"
+  fi
+fi
+
+# Replace '$CT_INDIR' with the appropriate path
+testlines=${testlines//@('$CT_INDIR'|'${CT_INDIR}')/"$CIAOTEST_INPUT/$tool"}
+
+# Print the test
+print - "$testlines"
+
+# If "-r resultset" was given, print log file for specified result set
+
+if [[ ${outputset:-0} != 0 ]]; then
+  # Print title for output section
+  print "\n** Output **\n"
+
+  # Print log file
+  cat $outputlog
+fi
+
+# Indicate success
+exit 0
+

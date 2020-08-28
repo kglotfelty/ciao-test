@@ -1,0 +1,101 @@
+#!/usr/bin/env ksh
+
+set -o nounset
+
+ct_define_ct
+
+function do_error {
+  ct_error "$*"
+  exit 1
+}
+
+progname=${0##*/}
+
+if (( $# < 2 )); then
+  print "Usage: $progname baselineset testset [tests]" >&2
+  exit 2
+fi
+
+baselineset=$1
+testset=$2
+
+# Shift first 2 arguments so that remaining args are
+# test-selection info
+shift 2
+
+name1=${baselineset%/}
+name2=${testset%/}
+outdir=${name1}-${name2}-smartcompare
+#outdir=${progname}_data
+compfile=compare.dat
+
+if [[ ! -d $CIAOTEST_RESULTS/$baselineset ]]; then
+  do_error "result set $baselineset does not exist"
+elif [[ ! -d $CIAOTEST_RESULTS/$testset ]]; then
+  do_error "result set $testset does not exist"
+elif [[ -d $outdir ]]; then
+  do_error "directory $outdir already exists"
+elif ! mkdir $outdir
+then
+  do_error "cannot create directory $outdir"
+fi
+
+cd $outdir
+
+testdat_files=""
+
+
+list_tests "${@:-}" | while read tool test 
+do
+  testdat=${tool}_${test}.res
+  testdiff=${tool}_${test}.diff
+  testdat_files+="$testdat "
+
+  compare_results -r -c "smart_diff -l $testdiff" \
+      $baselineset $testset $tool $test > $testdat
+
+  print "$tool $test" >> ${ct.complete}
+done
+
+rm -f ${ct.complete}
+
+{
+  print "$CIAOTEST_RESULTS/$baselineset"
+  print "$CIAOTEST_RESULTS/$testset"
+  print "smart_diff"
+} > $compfile
+
+integer numtotal=0
+integer numfail=0
+integer numnocomp=0
+
+testinfo=""
+
+for testdat in $testdat_files
+do
+  head -6 $testdat | tail -3 | {
+    read input
+    numtotal+=input
+    read input
+    numfail+=input
+    read input
+    numnocomp+=input
+  }
+
+  testinfo+="$(tail -2 $testdat)\n"
+done
+
+{
+  print "$numtotal"
+  print "$numfail"
+  print "$numnocomp"
+  print -n "$testinfo"
+} >> $compfile
+
+for file in $testdat_files
+do
+  rm -f $file
+done
+
+chmod -w *.diff *.dat
+

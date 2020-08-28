@@ -1,0 +1,151 @@
+# Validate test-selection command-line arguments and return
+# associative array containing names of all selected tests
+#
+# Invocation syntax:
+#
+#   ct_find_tests outarray
+#   ct_find_tests outarray toolname
+#   ct_find_tests outarray 'toolname_regexp'
+#   ct_find_tests outarray toolname testname ...
+#
+# Format of output associative array:
+#
+#   outarray=([tool1]="test1 test2 ... testN1 "
+#             [tool2]="test1 test2 ... testN2 "
+#             ...
+#             [toolM]="test1 test2 ... testNM ")
+#
+
+function ct_find_tests {
+  # $1 = name of empty associative array that will
+  #      contain results
+  # $2 = name of tool or ksh regexp for selecting
+  #      tool names (optional)
+  # $3, $4, ...
+  #    = names of individual tests (optional)
+
+  nameref outarray=$1
+
+  # If tool name is provided, use it; otherwise, select all
+  # tools using the '*' wildcard
+  typeset toolnames=${2:-'*'}
+
+  # Use "ct" compound variable
+  ct_define_ct
+
+  # Shift off first (and second, if present) argument
+  # so that $* contains only the names of individual tests
+  # (or is null if no tests names were specified)
+  if [[ $# == 1 ]]; then
+    shift 1
+  else
+    shift 2
+  fi
+
+  # Get directories matching toolname expression
+  #
+  # Use eval to allow regexp expansion of $toolnames;
+  # use print (instead of ls) so that we don't get error messages
+  # from ls if $toolnames is a bogus regexp (if there is no
+  # match, print will just treat it as a string and leave it as is)
+  #
+  # If eval complains because the syntax of $toolnames is bogus, issue
+  # an error and die (this is mainly to catch invalid regexp syntax)
+
+  typeset dirlist      # Names of directories matching toolname expression
+
+  if ! dirlist=$(eval print $CIAOTEST_TESTS/$toolnames 2> /dev/null)
+      # Redirect any error messages from eval to /dev/null
+  then
+    ct_error "bad toolname expression"
+    return 1
+  fi
+
+  # Extract directory names from $dirlist and place them in
+  # $tooldirlist (this filters out the names of non-directory
+  # files living in $CIAOTEST_TESTS)
+
+  typeset dir          # Name of current directory to process
+  typeset tooldirlist  # Valid tool directories found in $dirlist
+
+  tooldirlist=""
+
+  for dir in $dirlist
+  do
+    if [[ -d $dir ]]; then
+      # $dir is a directory, so add it to the list
+      tooldirlist+="$dir "
+    fi
+  done
+
+  # Die if $dirlist contained no valid directories
+  if [[ -z $tooldirlist ]]; then
+    ct_error "$toolnames: no matching tools"
+    return 1
+  fi
+
+  # Process the tool directories
+
+  typeset tooldir      # Directory containing tests for current tool
+  typeset tool         # Name of current tool
+  typeset testfiles    # Names of test files found for current tool
+  typeset testnames    # Names of tests for current tool
+  typeset test         # Name of current test
+
+  for tooldir in $tooldirlist
+  do
+    tool=${tooldir##*/}
+    testnames=""
+
+    if [[ $# == 0 ]]; then
+      # No individual tests specified, so get all tests for current
+      # tool
+
+      testfiles=$(ls $tooldir/*.${ct.main} 2> /dev/null)
+
+      # If there are no tests for this tool, issue warning and
+      # move on to next tool
+      if [[ -z $testfiles ]]; then
+	ct_warning "$tool: no tests found"
+	continue
+      fi
+
+      for test in $testfiles
+      do
+	# Strip ".MAIN" and path to get name of test, then add it
+	# to list for this tool
+	test=${test%.${ct.main}}
+	test=${test##*/}
+	testnames+="$test "
+      done
+    else
+      # Individual tests specified, so check for a ".MAIN" file
+      # for each test
+
+      for test in $*
+      do
+	if [[ -e ${tooldir}/${test}.${ct.main} ]]; then
+	  # Test file found, so add test to list for this tool
+	  testnames+="$test "
+	else
+	  # No test file, so die
+	  ct_error "$tool/$test: test not found"
+	  return 1
+	fi
+      done
+    fi
+
+    # Add entry for this tool to output array
+    outarray[$tool]="$testnames"
+  done
+
+  # Die if no tests were found for the tools in $tooldirlist
+  if [[ ${#outarray[*]} == 0 ]]; then
+    ct_error "no tests found"
+    return 1
+  fi
+
+  # Indicate success
+  return 0
+}
+

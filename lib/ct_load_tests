@@ -1,0 +1,93 @@
+# Given test-list file test-selection argument, return
+# associative array containing names of all selected tests
+#
+# Invocation syntax:
+#
+#   ct_load_tests outarray 'file(filename)'
+#
+# Format of output associative array:
+#
+#   outarray=([tool1]="test1 test2 ... testN1 "
+#             [tool2]="test1 test2 ... testN2 "
+#             ...
+#             [toolM]="test1 test2 ... testNM ")
+#
+
+function ct_load_tests {
+  # $1 = name of empty associative array that will
+  #      contain results
+  # $2 = expression 'file(filename)', where filename is the
+  #      name of a test-list file with each line in the
+  #      format "tool test"
+
+  nameref outarray=$1
+  typeset fileexpr=$2
+
+  # Use "ct" compound variable
+  ct_define_ct
+
+  # Validate argument syntax
+  if [[ $fileexpr != file\(!(*(\s))\) ]]; then
+    ct_error "bad test-list file expression"
+    return 1
+  fi
+
+  # Extract file name
+  typeset file=${fileexpr#'file('}
+  file=${file%')'}
+
+  # Die if file does not exist or isn't readable
+  if [[ ! -f $file || ! -r $file ]]; then
+    ct_error "cannot read file \"$file\""
+    return 1
+  fi
+
+  # Store tool/test info from file in outarray
+
+  typeset line  # Array containing current line elements
+  typeset tool  # Extracted tool name
+  typeset test  # Extracted test name
+
+  sort $file | uniq | while read -A line
+      # Run file through sort and uniq so that each test appears only once
+  do
+    # Die if line isn't in format "tool test"
+    if [[ ${#line[*]} != 2 ]]; then
+      ct_error "invalid tool/test syntax in file \"$file\""
+      return 1
+    fi
+
+    # Store tool and test names
+    tool=${line[0]}
+    test=${line[1]}
+
+    # Die if test doesn't exist
+    if [[ ! -e $CIAOTEST_TESTS/$tool/${test}.${ct.main} ]]; then
+      ct_error "$tool/$test: test not found"
+      return 1
+    fi
+
+    # Store tool/test in outarray
+#    if [[ ${outarray[$tool]:-0} == 0 ]]; then
+    if [[ ${outarray[$tool]:=0} == 0 ]]; then
+      # First test for this tool, so create new array element
+      outarray[$tool]="$test "
+    else
+      # Array element for this tool exists, so add to it
+      outarray[$tool]+="$test "
+    fi
+  done
+  
+
+
+  # Die if no tests were found (presumably meaning that the
+  # file was empty)
+  if [[ ${#outarray[*]} == 0 ]]; then
+    ct_error "no tests found"
+    return 1
+  fi
+
+  # Indicate success
+  return 0
+}
+

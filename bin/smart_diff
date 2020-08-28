@@ -1,0 +1,647 @@
+#!/usr/bin/env ksh
+#
+# Do an intelligent diff of all files in two directories.  For
+# non-FITS files, use 'cmp' to compare.  For FITS files, compare
+# header and data of every block; use 'dmdiff' for headers and tables,
+# 'dmimgcalc' for images.  Print comparison results to screen (in normal
+# mode, exit status of diff for each file or block; in interactive mode,
+# output of diff tool).
+#
+# Note that "file" is arbitrary (and may not even exist).  However, it
+# is required because the '-c' options of 'compare_results' and
+# 'diff_files' send file names to the specified command.
+#
+# Usage:
+#    smart_diff [-d] [-i] [-l log] /path1/tool/test/file /path2/tool/test/file
+#
+#    Options:
+#        -d      Do not use tool-specific tolerance file for dmdiff
+#        -i      Interactive mode: print comparison output to screen
+#        -l log  Write results to specified log file (non-interactive
+#                mode only)
+#        -z      Compares LOG files only
+#
+
+#
+# Added new -z function.  12/7/06 RND
+#
+#
+
+# Disallow uninitialized variables
+set -o nounset
+
+# Use "ct" compound variable
+ct_define_ct
+
+# Check CIAO setup and set environment variables to avoid
+# using user parameter and configuration files; die if
+# there are problems
+if ! ct_check_ciao
+then
+  exit 99
+fi
+
+
+#
+# Process command-line arguments
+#
+
+progname=${0##*/}	# Script name
+
+USAGE="Usage: $progname [-d] [-i] [-l log] /path1/tool/test/file /path2/tool/test/file"
+
+interactivemode=0	# Run in interactive mode?
+usetooltolfile=1	# Use tool-specific tolerance files?
+logonly=0               # Run only LOG file?
+
+# Process options
+while getopts ":zdil:" opt
+do
+  case $opt in
+    z  )  logonly=1 ;;
+    d  )  usetooltolfile=0 ;;
+    i  )  interactivemode=1 ;;
+    l  )  logfile=$OPTARG ;;
+    # Die on invalid option
+    \? )  ct_message "$USAGE"
+          exit 99 ;;
+  esac
+done
+shift $(($OPTIND - 1))
+
+# Check usage
+if [[ $# != 2 ]]; then
+  ct_message "$USAGE"
+  exit 99
+fi
+
+leftfile=$1			# Left file
+rightfile=$2			# Right file
+
+# If log file was specified, check that it does not already
+# exist and that we can create it
+if [[ $interactivemode == 0 && ${logfile:-0} != 0 ]]; then
+  if [[ -e $logfile ]]; then
+    ct_error "file $logfile already exists"
+    exit 99
+  elif ! touch $logfile
+  then
+    ct_error "cannot create file $logfile"
+    exit 99
+  fi
+fi
+
+if (( $logonly == 1)); then 
+interactivemode=1 
+fi
+
+
+#
+# Extract directories and tool and test names for $leftfile
+# and $rightfile.  If info can't be extracted (meaning the
+# arguments are in an invalid format), die with an error.
+#
+# Valid formats:
+#
+#   *tool/test/file
+#   *tool/test/
+#
+# Invalid formats:
+#
+#        /test/file
+#         test/file
+#             /file
+#              file
+#
+
+leftdir=${leftfile%/*}		# Directory containing left file
+rightdir=${rightfile%/*}	# Directory containing right file
+
+for dir in "$leftdir" "$rightdir"
+    # ""'s are necessary to catch "/file" case
+do
+  if [[ -z $dir ]]; then
+    # "/file" case leaves empty directory name
+    ct_error "bad path to file"
+    exit 99
+  elif [[ ! -d $dir ]]; then
+    # Non-existent directory
+    ct_error "cannot find directory $dir"
+    exit 99
+  fi
+done
+
+tool=${leftdir%/*}
+tool=${tool##*/}	# Tool name
+
+test=${leftdir##*/}	# Test name
+
+if [[ ($test == $leftdir) || -z $tool ]]; then
+  # Catch cases "/test/file", "test/file", "file"
+  ct_error "cannot extract tool and test names from string \"$leftfile\""
+  exit 99
+fi
+
+
+#
+# Set appropriate dmdiff tolerance file
+#
+
+# Default tolerance file
+defaulttol=$CIAOTEST_TOLFILES/DEFAULT.tol
+
+# Tool-specific tolerance file
+tooltol=$CIAOTEST_TOLFILES/${tool}.tol 
+#tooltol=/data/sdsreg/current_regtest/DS_tolfiles/${tool}.tol
+
+if [[ $usetooltolfile == 1 && -e $tooltol ]]; then
+  # User didn't specify '-d' and tool-specific tolerance file exists,
+  # so use it
+  tolfile=$tooltol
+elif [[ -e $defaulttol ]]; then
+  # Default tolerance file exists, so use it
+  tolfile=$defaulttol
+else
+  # No tolerance file to use
+  tolfile=""
+fi
+
+#
+# Returns maximum of two numbers
+#
+
+function max {
+  typeset val1=$1
+  typeset val2=$2
+
+  if (( val1 > val2 )); then
+    print "$val1"
+  else
+    print "$val2"
+  fi
+}
+
+
+#
+# Tests whether specified file is a FITS file
+#
+
+function is_fits_file {
+  typeset file=$1
+
+  # FITS file <==> first key is SIMPLE or XTENSION or TEXT/DTF, TEXT/SIMPLE for ASCII
+#  if head -1 $file | egrep 'SIMPLE|XTENSION|TEXT' > /dev/null 2>&1
+
+  ### Nick's better fits test ###
+  if ((file $file | grep 'FITS') || (head -1 $file | grep 'TEXT/DTF') || (head -1 $file | grep 'TEXT/SIMPLE')) > /dev/null 2>&1
+  then
+    # Found SIMPLE or XTENSION, so it's most likely a FITS file
+    return 0
+  else
+    # Not a FITS file
+    return 1
+  fi
+}
+
+
+if (( !logonly )) then
+#
+# Runs dmdiff and returns exit status
+#
+
+function do_dmdiff {
+
+  typeset tolfile=$1
+  typeset leftdir=$2
+  typeset rightdir=$3
+  typeset file=$4
+  typeset keys=$5
+  typeset data=$6
+
+  if (( !interactivemode )) then
+    typeset outfile=$7
+  else
+    typeset outfile=stdout      
+  fi
+
+  dmdiff \
+      infile1=$leftdir/$file \
+      infile2=$rightdir/$file \
+      outfile=$outfile \
+      tolfile=$tolfile \
+      keys=$keys \
+      data=$data \
+      verbose=1 \
+      clobber=no \
+      mode=h 
+
+      # verbosity always 1 so that diff output file is written
+
+  typeset estat=$?
+
+  if (( interactivemode )); then
+    print "\n"
+  fi
+
+  return $estat
+}
+
+
+#
+# Compares header of specified file or "file[block]" and returns
+# exit status
+#
+
+function diff_header {
+  typeset tolfile=$1
+  typeset leftdir=$2
+  typeset rightdir=$3
+  typeset file=$4
+
+  do_dmdiff "$tolfile" $leftdir $rightdir $file yes no ${tool}/${test}_${file}_Header
+  return $?
+}
+
+
+#
+# Compares table data of specified file or "file[block]" and returns
+# exit status
+#
+
+function diff_table {
+  typeset tolfile=$1
+  typeset leftdir=$2
+  typeset rightdir=$3
+  typeset file=$4
+
+  do_dmdiff "$tolfile" $leftdir $rightdir $file no yes ${tool}/${test}_${file}_Table
+
+  return $?
+}
+
+#
+# Compares image data of specified file or "file[block]" and
+# returns exit status
+#
+
+function diff_image_dmdiff {
+  typeset tolfile=$1
+  typeset leftdir=$2
+  typeset rightdir=$3
+  typeset file=$4
+
+  do_dmdiff "$tolfile" $leftdir $rightdir $file no yes ${tool}/${test}_${file}_Image
+
+}
+
+function diff_image {
+  typeset leftdir=$1
+  typeset rightdir=$2
+  typeset file=$3
+
+  # Compare images with dmimgcalc
+
+  dmimgcalc \
+      infile=$leftdir/$file \
+      infile2=$rightdir/$file \
+      outfile=none \
+      operation=tst \
+      weight=1 \
+      weight2=1 \
+      lookupTab='' \
+      clobber=no \
+      verbose=0 \
+      mode=h
+
+  typeset estat=$?
+
+  if (( interactivemode )); then
+      # If we're in interactive mode, display some results:  If the
+      # images are identical, say so.  Otherwise, run 'dmstat' on
+      # both images and difference of images and display results.
+      # (This gives the user an idea of how much the images differ.)
+
+      #print - "\n-----------------------"
+      #print "DMIMGCALC"
+      #print - "-----------------------\n"
+
+      if [[ $estat == 0 ]]; then
+        print "No differences found\n"
+      else
+        print "*** IMAGES DIFFER ***\n"
+
+	# Temporary file for difference of two images
+        typeset tmpimg=/tmp/${progname}_${tool}_${$}_imgdiff.fits
+
+	# Calculate difference of two images
+        dmimgcalc \
+            infile=$leftdir/$file \
+            infile2=$rightdir/$file \
+            outfile=$tmpimg \
+            operation=sub \
+            weight=1 \
+            weight2=1 \
+            lookupTab='' \
+            clobber=no \
+            verbose=0 \
+            mode=h
+
+	# Run 'dmstat' on both images and their difference
+
+	typeset imgfile
+
+        for imgfile in $leftdir/$file $rightdir/$file $tmpimg
+        do
+          dmstat \
+              infile=$imgfile \
+              centroid='no' \
+              median='no' \
+              sigma='yes' \
+              clip='no' \
+              nsigma='3' \
+              maxiter='20' \
+              mode='h'
+
+          print ""
+        done
+
+	# Remove temporary file
+        rm -f $tmpimg
+      fi
+
+    print ""
+
+
+  elif (( !interactivemode )); then
+
+      ## identical to the interactive mode, but output of dmstat is captured
+      touch ${tool}/${test}_${file}_Image
+
+      if [[ $estat == 0 ]]; then
+        print "\nNo differences found\n" >> ${tool}/${test}_${file}_Image
+      else
+        print "\n*** IMAGES DIFFER ***\n" >> ${tool}/${test}_${file}_Image
+
+	# Temporary file for difference of two images
+        typeset tmpimg=/tmp/${progname}_${tool}_${$}_imgdiff.fits
+
+	# Calculate difference of two images
+        dmimgcalc \
+            infile=$leftdir/$file \
+            infile2=$rightdir/$file \
+            outfile=$tmpimg \
+            operation=sub \
+            weight=1 \
+            weight2=1 \
+            lookupTab='' \
+            clobber=no \
+            verbose=0 \
+            mode=h
+
+	# Run 'dmstat' on both images and their difference
+
+	typeset imgfile
+
+        for imgfile in $leftdir/$file $rightdir/$file $tmpimg
+        do
+          print $imgfile >> ${tool}/${test}_${file}_Image
+          dmstat \
+              infile=$imgfile \
+              centroid='no' \
+              median='no' \
+              sigma='yes' \
+              clip='no' \
+              nsigma='3' \
+              maxiter='20' \
+              mode='h'  >> ${tool}/${test}_${file}_Image
+
+          print "" >> ${tool}/${test}_${file}_Image
+        done
+
+	# Remove temporary file
+        rm -f $tmpimg
+      fi
+
+  fi
+
+  # Return 'dmimgcalc' exit status
+  return $estat
+}
+
+
+#
+# Writes filename and diff exit status to screen
+#
+
+function write_to_log {
+  typeset -L75 filename=$1
+  typeset -R4 exitstat=$2
+
+  if [[ ${logfile:-0} != 0 ]]; then
+    # Log file was specified, so write to it
+    print "${filename} ${exitstat}" >> $logfile
+  else
+    # No log file, so write to stdout
+    print "${filename} ${exitstat}"
+  fi
+}
+
+fi
+#
+# Compare all files
+#
+
+integer exitstat=0	# Maximum diff exit status
+integer estat=0		# Current diff exit status
+
+  if (( !interactivemode )) then
+    mkdir ${tool}
+  fi
+
+for file in $leftdir/!(*.par|${ct.fail}|${ct.testinfo})
+    # Exclude *.par, EXIT_STATUS, and INFO files
+do
+  file=${file##*/}
+
+  if (( interactivemode )); then
+    print "**************************************************"
+    print "* $file"
+    print "**************************************************\n\n"
+  fi
+
+  if [[ ! -e $rightdir/$file ]]; then
+    #
+    # File exists in $leftdir but not $rightdir
+    #
+
+    estat=2
+    exitstat=$(max $exitstat $estat)
+
+    if (( !interactivemode )); then
+      write_to_log $file $estat
+    else
+      print "FILE NOT FOUND: ${rightdir}/${file}\n"
+    fi
+  elif ! is_fits_file $leftdir/$file
+  then
+
+    #
+    # Non-FITS files
+    #
+ 
+    cmp $leftdir/$file $rightdir/$file > /dev/null 2>&1
+    estat=$?
+    exitstat=$(max $exitstat $estat)
+
+    if (( !interactivemode )); then
+      write_to_log $file $estat
+      # KJG: 2020-07-17, remove '-w' flag here.  `cmp` reports files are
+      # different but if only whitespace is diff then -w shows no 
+      # diff which is very confusing.  
+      diff $leftdir/$file $rightdir/$file > ${tool}/${test}_${file}_diffs
+    else
+      if [[ $estat == 0 ]]; then
+        print "No differences found\n"
+      else
+	if [[ $file == ${ct.log} ]]; then
+	  # We're comparing LOG files, so it's safe to use 'diff'
+	  # so user actually sees differences
+	  diff -w $leftdir/$file $rightdir/$file
+
+	  print ""
+	else
+	  if (file $leftdir/$file | grep 'ASCII text') > /dev/null 2>&1; then 
+	  diff -w $leftdir/$file $rightdir/$file
+	  print ""
+         else
+	  # We can't say whether the file is text or binary, so
+	  # we'll leave it to the user to perform a more informative
+	  # comparison
+          print "FILES DIFFER\n"
+	fi
+        fi
+      fi
+    fi
+  else
+
+
+    #
+    # FITS files
+    #
+  if (( !logonly )) then
+
+    dmlist infile=$leftdir/$file opt=blocks outfile='' rows='' \
+	cells='' verbose=0 mode=h | \
+    grep Block | tail -n +2 | \
+    sed 's,SPECRESP MATRIX,SPECRESP_MATRIX,' |\
+    awk '{ printf "%s %s %s\n",$2,$3,$4 }' | \
+    sed -e 's/://' | tee -a debug.log | \
+    while read blocknum blockname blocktype
+    do
+      # Handle blocks with no name by using block number instead
+      if [[ -z $blocktype ]]; then
+	blocktype="$blockname"
+#	blockname="${blocknum%:}"
+        blocknum="${blocknum%}"
+      fi
+
+      # Skip null blocks
+      if [[ $blocktype == "Null" ]]; then
+	continue
+      fi
+
+      filewithblock="$file[$blocknum]"
+
+
+      #
+      # Compare headers
+      #
+
+      if (( interactivemode )); then
+        print "*** Block $blockname (Header) ***\n"
+      fi
+
+      diff_header "$tolfile" $leftdir $rightdir "$filewithblock"
+      estat=$?
+      exitstat=$(max $exitstat $estat)
+
+      if (( !interactivemode )); then
+        write_to_log "${filewithblock}_Header" $estat
+      fi
+
+
+      #
+      # Compare data
+      #
+
+      # Skip tables with zero rows
+      if [[ ( $blocktype == "Table" ) && ( $(dmlist \
+          "$leftdir/$filewithblock" blocks | grep $blockname | \
+          awk '{ print $8 }') == 0 ) ]]
+      then
+	continue
+      fi
+
+      if (( interactivemode )); then
+        print "*** Block $blockname ($blocktype) ***\n"
+      fi
+
+      if [[ $blocktype == "Table" ]]; then
+        diff_table "$tolfile" $leftdir $rightdir "$filewithblock"
+        estat=$?
+
+      elif [[ $blocktype == "Image" ]]; then
+        diff_image_dmdiff "$tolfile" $leftdir $rightdir "$filewithblock"
+        #diff_image $leftdir $rightdir "$filewithblock"
+        estat=$?
+      else
+	# I don't know if any other block types are possible, but
+	# we should do this just to be safe
+
+        if (( interactivemode )); then
+          print "Unknown or Mismatched block type: $blocktype\n"
+        fi
+
+        estat=99
+      fi
+
+      exitstat=$(max $exitstat $estat)
+
+      if (( !interactivemode )); then
+        write_to_log "${filewithblock}_$blocktype" $estat
+      fi
+    done
+
+  fi
+
+fi
+
+  if (( interactivemode )); then
+    print "\n"
+  fi
+done
+
+# 
+# Sort the logfile
+#
+# if the logfile exists and is not empty ("-s"), sort it 
+# on the exit status column (col 3)
+#
+
+if (( !interactivemode )); then
+  if [[ -s ${logfile} ]]; then
+
+    # sort such that the failures (non-zero exit status) are listed first
+    sort -n -r -k2 ${logfile} > tmpfile
+    mv tmpfile ${logfile}
+  fi
+fi
+
+
+#
+# Return maximum exit-status value returned by a diff command
+#
+
+exit $exitstat
+
+

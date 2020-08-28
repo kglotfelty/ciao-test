@@ -1,0 +1,32 @@
+# Define "ct" compound variable (unless it's already
+# defined)
+
+function ct_define_ct {
+  if [[ ${ct:+1} != 1 ]]; then
+    # Define "ct" variable
+
+    # This doesn't seem to work with ksh
+    # version M 1993-12-28 n+; is that a bug?
+    #ct=(log=LOG)
+    #ct+=(run=RUN)
+    #ct+=(lock=LOCK)
+    #ct+=(fail=EXIT_STATUS)
+    #ct+=(info=HISTORY)
+    #ct+=(main=MAIN)
+    #ct+=(aux=AUX)
+
+    ct=(log=LOG \
+	run=RUN \
+	lock=LOCK \
+	fail=EXIT_STATUS \
+	info=HISTORY \
+	complete=DONE \
+	testinfo=INFO \
+	main=MAIN \
+	aux=AUX)
+
+    # Make "ct" read-only
+    readonly ct
+  fi
+}
+

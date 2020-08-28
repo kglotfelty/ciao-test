@@ -1,0 +1,127 @@
+#!/usr/bin/env ksh
+
+#
+# Diff a specific test result file for two result sets
+#
+# Usage:
+#    diff_files resultset1 resultset2 tool test
+#
+#    Options:
+#        -c 'command'  Use 'command' to compare files, e.g
+#		       'command leftfile rightfile'
+#        -f file       Compare specified file instead of log
+#        -x            Use xcleardiff to compare files
+#        -L            Compare only LOG files
+
+#
+#  Added new -L function 12/7/06 RND
+#
+#
+
+# Disallow uninitialized variables
+set -o nounset
+
+# Use "ct" compound variable
+ct_define_ct
+
+# Store script name
+progname=${0##*/}
+
+USAGE="Usage:
+$progname [-x | -L | -c 'command'] [-f file] resultset1 resultset2 tool test"
+
+logonly=0          # Compare only LOG file
+
+# Process options
+while getopts ":c:f:x,L" opt
+do
+  case $opt in
+    c  )  command="$OPTARG" ;;
+    f  )  file=$OPTARG ;;
+    x  )  command="xcleardiff" ;;
+    L  )  command="smart_diff -z" ;;
+    # Die on invalid option
+    \? )  ct_message "$USAGE"
+	  exit 2 ;;
+  esac
+done
+shift $(($OPTIND - 1))
+
+# If no command specified, use 'smart_diff -i' by default
+command=${command:-"smart_diff -i"}
+
+
+# If no file specified, use log by default
+file=${file:-${ct.log}}
+
+# Check usage
+if [[ $# != 4 ]]; then
+  ct_message "$USAGE"
+  exit 2
+fi
+
+# Store other arguments
+leftfile=${1%/}   # First result set
+rightfile=${2%/}  # Second result set
+tool=$3           # Tool name
+test=$4           # Test name
+
+# Validate arguments and set leftfile and rightfile
+# to the names of the files to diff
+
+nameref result=leftfile
+
+for result in leftfile rightfile
+do
+  # Die if the result set doesn't exist
+  if [[ ! -d $CIAOTEST_RESULTS/$result ]]; then
+    ct_error "cannot find result set $result"
+    exit 1
+  fi
+
+  # Make leftfile/rightfile point to the relevant
+  # file for diffing
+  result=$CIAOTEST_RESULTS/$result/$tool/$test/$file
+
+done
+
+
+# Verify that files to diff exist
+#
+# NOTE:
+# This part can't be added to the preceding loop
+# because of (apparently) an odd ksh bug:  The
+# last line in the loop functions correctly for
+# leftfile.  However, in the rightfile iteration,
+# the value of $result after the final assignment
+# is equal to $leftfile, but **only within the
+# loop**, i.e. 'print $result' at the end of the
+# loop prints $leftfile, but just after the loop
+# it prints $rightfile -- weird!
+
+for file in $leftfile $rightfile
+do
+  if [[ ! -e $file ]]; then
+    # File doesn't exist, so die
+    ct_error "cannot find file $file"
+    exit 1
+  fi
+done
+
+# Verify that the comparison command exists within
+# current $PATH; die if it doesn't
+compath=$(whence -p $command)
+if [[ -z $compath ]]; then
+  ct_error "$command: command not found"
+  exit 1
+fi
+
+# Run the comparison command; can't check exit status
+# because it may not have a standard meaning, e.g. with
+# diff, status 0 means "no differences", 1 means
+# "differences found"
+
+$command $leftfile $rightfile
+
+# Exit status is that of comparison command
+

@@ -1,0 +1,38 @@
+# Given test-selection command-line arguments, return
+# associative array containing names of all selected tests
+#
+# Invocation syntax:
+#
+#   ct_get_tests outarray
+#   ct_get_tests outarray toolname
+#   ct_get_tests outarray 'toolname_regexp'
+#   ct_get_tests outarray toolname testname ...
+#   ct_get_tests outarray 'file(filename)'
+#
+# Format of output associative array:
+#
+#   outarray=([tool1]="test1 test2 ... testN1 "
+#             [tool2]="test1 test2 ... testN2 "
+#             ...
+#             [toolM]="test1 test2 ... testNM ")
+#
+
+function ct_get_tests {
+  if [[ ( $# == 2 ) && ( $2 == file\(!(*(\s))\) ) ]]; then
+    # Handle 'file(filename)' case with ct_load_tests
+    if ! ct_load_tests "$@"
+    then
+      return 1
+    fi
+  else
+    # Handle all other cases with ct_find_tests
+    if ! ct_find_tests "$@"
+    then
+      return 1
+    fi
+  fi
+
+  # Indicate success
+  return 0
+}
+

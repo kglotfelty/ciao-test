@@ -1,0 +1,128 @@
+#!/usr/bin/env ksh
+
+#
+# Delete specified results
+#
+# Usage:
+#    delete_results resultset
+#    delete_results resultset tool
+#    delete_results resultset 'toolname_regexp'
+#    delete_results resultset tool test ...
+#
+#    Options:
+#        -f   Do not prompt for confirmation
+#
+
+# Disallow uninitialized variables
+set -o nounset
+
+# Use "ct" compound variable
+ct_define_ct
+
+# Store script name and command line
+progname=${0##*/}
+cmdline="$progname ${*:-""}"
+
+USAGE="Usage: $progname [-f] resultset
+       $progname [-f] resultset tool
+       $progname [-f] resultset 'toolname_regexp'
+       $progname [-f] resultset tool test ..."
+
+# Process options
+while getopts ":f" opt
+do
+  case $opt in
+    f )  force=1 ;;
+    # Die on invalid option
+    \? )  ct_message "$USAGE"
+          exit 2 ;;
+  esac
+done
+shift $(($OPTIND - 1))
+
+# Check usage
+if [[ $# == 0 ]]; then
+  ct_message "$USAGE"
+  exit 2
+fi
+
+# Process first argument (name of result set)
+resultset=${1%/}  # Remove trailing slash (if present)
+resultdir=$CIAOTEST_RESULTS/$resultset
+shift
+
+# Die if result set doesn't exist
+if [[ ! -d $resultdir ]]; then
+  ct_error "cannot find result set $resultset"
+  exit 1
+fi
+
+# If specific tools and/or tests were selected, get
+# names of tests to process
+
+if [[ ${*:-0} != 0 ]]; then
+  typeset -A tests
+  if ! ct_get_tests tests $*
+  then
+    # Bad syntax or nonexistent tests, so die
+    exit 1
+  fi
+fi
+
+# Confirm deletion (unless "-f" was given)
+
+if [[ ${force:-0} == 0 ]]; then
+  read input?'delete selected results (yes/no)? '
+
+  if [[ $input != @(y|yes) ]]; then
+    # Response wasn't "y" or "yes", so abort
+    exit 0
+  fi
+fi
+
+# If tests are still running, issue warning and reconfirm
+# deletion (user should delete running results only
+# if run_tests crashed and left a RUN file sitting around)
+
+if [[ -e $resultdir/${ct.run} ]]; then
+  ct_warning "$resultset is still running!"
+  ct_message "Deleting now will likely produce unexpected and undesirable results"
+  read input?'Are you sure you want to proceed (yes/no)? '
+
+  if [[ $input != @(y|yes) ]]; then
+    # Response wasn't "y" or "yes", so abort
+    exit 0
+  fi
+fi
+
+# Delete the results
+
+if [[ $# == 0 ]]; then
+  # Entire result set specified, so delete whole directory;
+  # die on failure
+  if ! rm -rf $resultdir
+  then
+    ct_error "cannot delete result set $resultset"
+    exit 1
+  fi
+else
+  # Specific tools and/or tests given, so delete
+  # only those results
+
+  # Append to history file
+  {
+     date
+     print "Command line: \"$cmdline\"\n"
+  } >> $resultdir/${ct.info}
+
+  # Delete results; die on failure
+  if ! ct_delete_results $resultset tests
+  then
+    ct_error "cannot delete results in result set $resultset"
+    exit 1
+  fi
+fi
+
+# Indicate success
+exit 0
+

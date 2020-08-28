@@ -1,0 +1,66 @@
+#!/usr/bin/env ksh
+
+
+#
+# List names of all or selected tests
+#
+# Usage:
+#    list_tests
+#    list_tests tool
+#    list_tests 'toolname_regexp'
+#    list_tests tool test ...
+#
+#    Options:
+#        -n  List test name only (and not tool name)
+#
+
+# Disallow uninitialized variables
+set -o nounset
+
+# Store script name
+progname=${0##*/}
+
+USAGE="Usage: $progname [-n]
+       $progname [-n] tool
+       $progname [-n] 'toolname_regexp'
+       $progname [-n] tool test ..."
+
+# Process options
+while getopts ":n" opt
+do
+  case $opt in
+    n  )  nameonly=1 ;;
+    # Die on invalid option
+    \? )  ct_message "$USAGE"
+	  exit 2 ;;
+  esac
+done
+shift $(($OPTIND - 1))
+
+# Get tests
+typeset -A tests
+if ! ct_get_tests tests ${*:-""}
+then
+  # Bad syntax or nonexistent tests, so die
+  exit 1
+fi
+
+# Print info for each selected test
+
+for tool in ${!tests[@]}
+do
+  for test in ${tests[$tool]}
+  do
+    # Print tool name (unless "-n" was given)
+    if [[ ${nameonly:-0} == 0 ]]; then
+      print -n "$tool "
+    fi
+
+    # Print test name
+    print "$test"
+  done
+done
+
+# Indicate success
+exit 0
+

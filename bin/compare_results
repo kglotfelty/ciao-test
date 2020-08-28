@@ -1,0 +1,394 @@
+#!/usr/bin/env ksh
+
+
+#
+# Compare two result sets and produce a report on the comparison
+#
+# Usage:
+#    compare_results resultset1 resultset2
+#    compare_results resultset1 resultset2 tool
+#    compare_results resultset1 resultset2 'toolname_regexp'
+#    compare_results resultset1 resultset2 tool test ...
+#
+#    Options:
+#        -c 'command'  Use 'command' to compare files, e.g
+#                      'command leftfile rightfile'
+#        -d file       Use specified "raw" report file from previous run
+#        -f file       Compare specified file instead of log
+#	 -h            Produce HTML report (NOT IMPLEMENTED)
+#	 -r            Produce "raw" report (for further processing)
+#	 -s            Produce summary report
+#
+
+# Disallow uninitialized variables
+set -o nounset
+
+# Use "ct" compound variable
+ct_define_ct
+
+# Store script name and command line
+progname=${0##*/}
+cmdline="$progname ${*:-""}"
+
+USAGE="Usage: $progname resultset1 resultset2
+       $progname resultset1 resultset2 tool
+       $progname resultset1 resultset2 'toolname_regexp'
+       $progname resultset1 resultset2 tool test ...
+       
+       Options:
+         -c 'command'  Use 'command' to compare files, e.g
+                       'command leftfile rightfile'
+         -d file       Use specified "raw" report file from previous run
+         -f file       Compare specified file instead of log
+	 -h            Produce HTML report (NOT IMPLEMENTED)
+	 -r            Produce \"raw\" report (for further processing)
+	 -s            Produce summary report"
+
+# Process options
+while getopts ":c:d:f:hrs" opt
+do
+  case $opt in
+    c  )  command="$OPTARG" ;;
+    d  )  reportfile=$OPTARG ;;
+    f  )  file=$OPTARG ;;
+    h  )  html=1 ;;
+    r  )  raw=1 ;;
+    s  )  summary=1 ;;
+    # Die on invalid option
+    \? )  ct_message "$USAGE"
+	  exit 2 ;;
+  esac
+done
+shift $(($OPTIND - 1))
+
+if [[ ${reportfile:-0} != 0 ]]; then
+  #
+  # Use "raw" comparison results from previous run
+  #
+
+  if [[ ! -e $reportfile ]]; then
+    ct_error "cannot open file $reportfile"
+    exit 1
+  fi
+
+  head -6 $reportfile | {
+    read leftdir
+    read rightdir
+    read file
+    read total
+    read fail
+    read nocompare
+  }
+
+  leftset=${leftdir##*/}
+  rightset=${rightdir##*/}
+
+  report="$(tail -n +7 $reportfile)\n"
+      # '\n' necessary to process last line in report correctly
+
+else
+  #
+  # Create new comparison
+  #
+
+  # DEBUG
+  if [[ ${html:-0} == 1 ]]; then
+    ct_message "HTML output mode not yet implemented"
+    exit 1
+  fi
+  
+  # If no command specified, use 'cmp -s' by default
+  command=${command:-"cmp -s"}
+
+  # If no file specified, use log by default
+  file=${file:-${ct.log}}
+
+  # Check usage
+  if (( $# < 2 )); then
+    ct_message "$USAGE"
+    exit 2
+  fi
+  
+  # Store and verify names of result sets
+  
+  leftset=${1%/}  # Remove trailing slash (if present)
+  leftdir=$CIAOTEST_RESULTS/$leftset
+  rightset=${2%/}  # Remove trailing slash (if present)
+  rightdir=$CIAOTEST_RESULTS/$rightset
+  shift 2
+
+  for rset in $leftset $rightset
+  do
+    rdir=$CIAOTEST_RESULTS/$rset
+  
+    # Die if result set doesn't exist
+    if [[ ! -d $rdir ]]; then
+      ct_error "cannot find result set $rset"
+      exit 1
+    fi
+  
+    # If tests are still running, issue warning
+    if [[ -e $rdir/${ct.run} ]]; then
+      ct_warning "$rset is still running!"
+    fi
+  done
+  
+  # Get tests
+  typeset -A tests
+  if ! ct_get_tests tests ${*:-""}
+  then
+    # Bad syntax or nonexistent tests, so die
+    exit 1
+  fi
+  
+  # Verify that the comparison command exists within
+  # current $PATH; die if it doesn't
+  compath=$(whence -p $command)
+  if [[ -z $compath ]]; then
+    ct_error "$command: command not found"
+    exit 1
+  fi
+  
+  # Do the comparison
+  
+  report=""            # Raw comparison data
+  integer total=0      # Total number of tests compared
+  integer fail=0       # Number of failed tests (results differ
+                       # between left and right result sets)
+  integer nocompare=0  # Number of tests for which comparison failed
+  		       # (files not found, or comparison command
+  		       # returned exit status >1)
+  
+  for tool in ${!tests[@]}
+  do
+    # If neither set has results for this tool, move
+    # on to next tool
+    if [[ ! -d $leftdir/$tool && ! -d $rightdir/$tool ]]; then
+      continue
+    fi
+  
+    # Write tool name to report
+    report+="$tool\n"
+  
+    for test in ${tests[$tool]}
+    do
+      lefttest=$leftdir/$tool/$test
+      leftfile=$lefttest/$file
+      righttest=$rightdir/$tool/$test
+      rightfile=$righttest/$file
+
+      # If neither set has results for this test, move on
+      # to next test
+      if [[ ! -d $lefttest && ! -d $righttest ]]; then
+        continue
+      fi
+
+      ct_message "Comparing ${tool}/${test} ... \c"
+          # '\c' suppresses newline
+
+      # Write test name to report
+      report+="$test "
+
+      # Update test count
+      (( total++ ))
+  
+      # Check test results for each result set
+  
+      for tdir in $lefttest $righttest
+      do
+        tfile=$tdir/$file
+
+        # Check if file to compare exists
+  
+        if [[ -e $tfile ]]; then
+  	# File exists
+  	report+="1 "
+        else
+  	# File not found; update count of failed
+  	# comparisons
+  	report+="0 "
+  	(( nocompare++ ))
+        fi
+
+        # Record exit status of test
+  
+        if [[ -e $tdir/${ct.fail} ]]; then
+  	# Found EXIT_STATUS file, so record its contents
+  	report+="$(< $tdir/${ct.fail}) "
+        else
+  	# No EXIT_STATUS found, so use status 0
+  	report+="0 "
+        fi
+      done
+  
+      # If both files to compare exist, do the comparison
+      # and record the exit status of the comparison
+      # command
+
+      if [[ -e $leftfile && -e $rightfile ]]; then
+        $command $leftfile $rightfile > /dev/null 2>&1
+        exitstat=$?
+        report+="$exitstat"
+
+        # If differences were found or the comparison failed,
+        # update the appropriate counter
+        #
+        # NOTE:
+        # This assumes that the exit status of the
+        # command doing the diff has the same meaning as
+        # the exit status of 'diff' or 'cmp', i.e.
+        #
+        #    0  No differences
+        #    1  Differences found
+        #   >1  An error occurred
+        #
+        if (( $exitstat == 1 )); then
+  	(( fail++ ))
+        elif (( $exitstat > 1 )); then
+  	(( nocompare++ ))
+        fi
+      else
+        # At least one file not found, so report exit
+        # status 2
+        report+="2"
+      fi
+  
+      # End line
+      report+="\n"
+  
+      ct_message "Done"
+    done
+  done
+fi
+
+# Produce the comparison report
+
+if [[ ${raw:-0} == 1 ]]; then
+  # Print raw report (intended for further processing
+  # by an external program)
+
+  # Print result directories
+  print "$leftdir"
+  print "$rightdir"
+
+  # Print name of file being compared
+  print "$file"
+
+  # Print statistics
+  print "$total"
+  print "$fail"
+  print "$nocompare"
+
+  # Print report
+  print -n "$report"
+elif [[ ${summary:-0} == 1 ]]; then
+  # Print summary report
+
+  # Print title
+  print "\nCOMPARISON SUMMARY"
+  print - "------------------"
+
+  # Print number of passes/failures
+  print "Pass (no differences):\t\t$(( $total-$fail-$nocompare ))"
+  print "Fail (differences found):\t$fail"
+
+  # Print number of failed comparisons (if >0)
+  if (( $nocompare > 0 )); then
+    print "Unable to compare:\t\t$nocompare"
+  fi
+
+  # Add blank line
+  print ""
+else
+  # Print plain text report
+
+  # Print title
+  print "\nRESULT COMPARISON"
+  print - "-----------------\n"
+
+  # Print summary section
+  print "*** SUMMARY ***\n"
+  print "Pass (no differences):\t\t$(( $total-$fail-$nocompare ))"
+  print "Fail (differences found):\t$fail"
+  if (( $nocompare > 0 )); then
+    print "Unable to compare:\t\t$nocompare"
+  fi
+  print "\n"
+
+  # Print details for individual tests
+
+  # Print header
+  print "*** DETAILS ***\n"
+  typeset -L60 out="Tool/Test"
+  print "${out}Pass/Fail\tComments"
+  print - "------------------------------------------------------------------------------------"
+
+  # Print test results
+  print -n "$report" | while read -A line
+
+  do
+   if [[ ${#line[*]} == 1 ]]; then
+      # Line contains a tool name, so set $tool appropriately
+      tool=${line[0]}
+    else
+      # Line contains test comparison info, so interpret and
+      # report results
+
+      test=${line[0]}  # Name of current test
+
+      # File-found flags
+      filefound=(left=${line[1]} right=${line[3]})
+
+      # Exit statuses
+      exitstat=(left=${line[2]} right=${line[4]})
+
+      cmpresult=${line[5]}  # Exit status of comparison command
+
+      # Print tool/test names
+      typeset -L60 out="$tool/$test"
+      print -n "$out"
+
+      # Print results of comparison
+      if (( $cmpresult == 0 )); then
+	# No differences found
+	print -n "pass"
+      elif (( $cmpresult == 1 )); then
+	# Differences found
+	print -n "FAIL"
+      else
+	# Comparison failed
+	print -n "N/A"
+      fi
+
+      # Add padding
+      print -n "\t\t"
+
+      # If files weren't found, add comment
+      if ! (( ${filefound.left} )); then
+	print -n "FNF[$leftset]  "
+      fi
+      if ! (( ${filefound.right} )); then
+	print -n "FNF[$rightset]  "
+      fi
+
+      # If tests returned non-zero exit status, add
+      # comment
+      if (( ${exitstat.left} )); then
+	print -n "ES(${exitstat.left})[$leftset]  "
+      fi
+      if (( ${exitstat.right} )); then
+	print -n "ES(${exitstat.right})[$rightset]  "
+      fi
+
+      # Add blank line
+      print ""
+    fi
+  done
+
+  # Add blank line
+  print ""
+fi
+
+# Indicate success
+exit 0
+

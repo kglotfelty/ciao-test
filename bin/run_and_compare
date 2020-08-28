@@ -1,0 +1,80 @@
+#!/usr/bin/env ksh
+
+set -o nounset
+set -o pipefail
+
+ct_define_ct
+
+function do_error {
+  ct_error "$*"
+  exit 1
+}
+
+if (( $# < 2 )); then
+  print "Usage: ${0##*/} baselineset testset [tests]" >&2
+  exit 2
+fi
+
+baselineset=${1%/}   # Remove trailing slash (if present)
+testset=${2%/}       # Remove trailing slash (if present)
+shift 2
+
+resdir=${baselineset}-${testset}
+logfile=${testset}.log
+complog=compare.lis
+
+# Check CIAO setup and set environment variables to avoid
+# using user parameter and configuration files; die if
+# there are problems
+if ! ct_check_ciao
+then
+  exit 99
+fi
+
+if [[ ! -d $CIAOTEST_RESULTS/$baselineset ]]; then
+  do_error "result set $baselineset does not exist"
+##elif [[ -d $CIAOTEST_RESULTS/$testset ]]; then
+##  do_error "result set $testset already exists"
+##elif [[ -d $resdir ]]; then
+##  do_error "result directory $resdir already exists"
+elif ! mkdir -p $resdir
+then
+  do_error "unable to create result directory $resdir"
+fi
+
+cd $resdir
+
+
+list_tests "${@:-}" | while read tool test 
+do
+  testdat=${tool}_${test}.res
+  testdiff=${tool}_${test}.diff
+  testdat_files+="$testdat "
+
+
+  date > ${tool}_${test}.time
+
+  printf "%-40s ." ${tool}/${test}
+
+  run_tests -f $testset ${tool} ${test} > $logfile 2>&1 
+  
+  printf "."
+  
+  compare_results -c "smart_diff -l $testdiff" \
+      $baselineset $testset $tool $test > $testdat 2>&1
+
+  printf ".\t"
+
+  res=`tail -2 $testdat | head -1 | tee -a $complog | sed "s,${tool}/${test}\ *,,"  `
+
+  date >> ${tool}_${test}.time
+
+  printf "$res\n"
+
+  print "$tool $test" >> ${ct.complete}
+done
+
+
+ln -s $CIAOTEST_RESULTS/$baselineset $baselineset
+ln -s $CIAOTEST_RESULTS/$testset $testset
+

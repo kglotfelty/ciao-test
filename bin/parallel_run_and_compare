@@ -1,0 +1,289 @@
+#!/usr/bin/env python
+
+import sys
+import subprocess
+import os
+import sqlite3
+import random
+
+def rand_sleep():
+    #~ import time as time
+    #~ import random as random
+    #~ delay = random.randint(1,3)
+    #~ print("delay {}".format(delay))
+    #~ time.sleep(delay)
+    pass
+
+def commit(db):
+    try:
+        db.commit()
+    except sqlite3.OperationalError as err:
+        rand_sleep()
+        db.commit()
+    
+
+def connect():
+    """
+    Connect to the database.  We use sqlite since things are running
+    in parallel; otherwise we'd need all kind of locking.
+    """
+    import sqlite3 as sql
+    try:
+        conn = sql.connect('results.sqlite', timeout=30.0, isolation_level=None)
+    except sql.OperationalError as err:
+        rand_sleep()
+        conn = sql.connect('results.sqlite', timeout=30.0, isolation_level=None)
+
+    return conn
+
+
+def create_db(conn, test_list, update=False):
+    """
+    Create the database table.  
+    
+    Creates the list of tools and adds a 'pending' row for each.
+    
+    TODO:  Add columns for the execution times.  
+    """
+    # Create table
+    conn.execute("PRAGMA journal_mode = OFF")
+    conn.execute("PRAGMA checkpoint_fullsync = ON")
+    commit(conn)
+
+    if False == update:
+        conn.execute("DROP TABLE IF EXISTS regression_tests")
+        commit(conn)
+        conn.execute("CREATE TABLE regression_tests (tool text, testid text, status text, comment text, start_test text, start_check text, end_test text)")
+        commit(conn)
+        with conn:
+            conn.executemany("INSERT INTO regression_tests VALUES (?,?,'pending','','','','')", test_list)
+        commit(conn)
+    else:
+        with conn:
+            for tool, testid in test_list:
+                conn.execute( "UPDATE regression_tests SET status = 'pending', comment = '', start_test = '', start_check = '', end_test = '' WHERE tool == ? and testid == ?",(tool, testid))
+        commit(conn)
+        
+
+    conn.close()
+    
+        
+
+def report( ):
+    """
+    Create a test report 
+    
+    TODO:  make pretty
+    """
+    conn = connect()
+    rr = conn.execute( "SELECT * from regression_tests  ORDER BY tool, testid")
+
+    with open( "compare.lis", "w") as fp:
+        for line in rr:
+            print(line)
+            fp.write("{:<40s}\t{}\t{}\n".format( "{}/{}".format(line[0],line[1]), line[2], line[3] ))
+
+
+
+
+def list_tests():
+    """
+    Run the list_tests command with any command line options to get the
+    list of tests to run.  Same syntax as other test scripts
+    """
+    cmd = [ "list_tests" ]
+    if len(sys.argv) > 3:
+        cmd.extend( sys.argv[3:] )
+
+    test_list = subprocess.check_output(cmd )
+    test_list = test_list.decode("ascii")
+    test_list = [ ti.split() for ti in test_list.split("\n") if len(ti) >0 ]
+    random.shuffle(test_list)
+    return test_list
+
+
+def parse_compare_log( logfile, tool, testid ):
+    """
+    Parse the compare_results output.  Since we run 1 test at a time
+    we just need the next-to last line.
+    """
+    
+    with open( logfile, "r") as fp:
+        ll = fp.readlines()
+    
+    # status is next to last line
+    stt = ll[-2]
+    stt = stt.replace( "{}/{}".format(tool, testid ), "").lstrip().split("\t")
+
+    state = stt[0]
+    comment = " ".join( stt[1:])
+
+    if u'pass' in state and 'ES' in comment:
+        state = 'exit_nonzero'
+        
+    return state, comment
+
+
+def run_test( tool, testid, output_dir, baseline_dir ):
+    try:
+        run_test_X( tool, testid, output_dir, baseline_dir )
+    except Exception as err:
+        import sys as  sys
+        import traceback as tb
+        tb.print_exc(file=sys.stderr)
+
+
+def run_test_X( tool, testid, output_dir, baseline_dir ):
+    """
+    This is adapted from the run_and_compare script.  It is an atomic
+    routine that can (and does) run in parallel.
+    """
+
+
+    def update_db( conn, tool, testid, status, comment, start_test=None, start_check=None, end_test=None  ):
+        try:
+            update_db_x( conn, tool, testid, status, comment, start_test, start_check, end_test  )
+        except sqlite3.OperationalError as err:
+            print(err)
+            rand_sleep()
+            update_db( conn, tool, testid, status, comment, start_test, start_check, end_test  )
+
+
+    def update_db_x( conn, tool, testid, status, comment, start_test=None, start_check=None, end_test=None  ):
+        """
+        Update the database with state parsed from the compare_results tool output
+        """
+        with conn:
+            conn.execute( "UPDATE regression_tests SET status = ? WHERE tool == ? and testid == ?",(status, tool, testid))
+            conn.execute( "UPDATE regression_tests SET comment = ? WHERE tool == ? and testid == ?",(comment, tool, testid))
+            
+            if start_test:
+                conn.execute( "UPDATE regression_tests SET start_test =? WHERE tool == ? and testid == ?",(start_test, tool, testid))
+            if start_check:
+                conn.execute( "UPDATE regression_tests SET start_check =? WHERE tool == ? and testid == ?",(start_check, tool, testid))
+            if end_test:
+                conn.execute( "UPDATE regression_tests SET end_test =? WHERE tool == ? and testid == ?",(end_test, tool, testid))
+
+        commit(conn)
+
+
+
+    import datetime as dt
+
+    print( "Running test {}/{}".format( tool, testid ))
+
+    root = tool+"_"+testid
+    results = root+".dat"
+    difffile = root+".diff"
+    logfile = root+".log"
+    timestamp = root+".time"
+
+    rand_sleep()
+
+    db = connect()    
+    ###db.execute("PRAGMA journal_mode = OFF")
+    ###db.execute("PRAGMA checkpoint_fullsync = TRUE")
+    ###db.execute("PRAGMA fullsync = TRUE")
+    commit(db)
+
+    start_time = str(dt.datetime.now())
+    update_db( db, tool, testid, "started", "", start_test=start_time )
+
+    with open( logfile, "w") as fp:
+        stt = subprocess.check_call( ["run_tests", "-f", output_dir, tool, testid], stdout=fp, stderr=fp)
+    test_stop = str(dt.datetime.now())
+
+    if 'none' == baseline_dir:
+        stop_time = test_stop
+        update_db( db, tool, testid, "complete", "no baseline", end_test=test_stop)        
+    else:
+        update_db( db, tool, testid, "checking", "", start_check=test_stop )
+        if os.path.exists( difffile ):
+            os.unlink( difffile )
+        with open( results, "w") as fp:
+            stt = subprocess.check_call( ["compare_results", "-c", "smart_diff -l {}".format(difffile), baseline_dir, output_dir, tool, testid], stdout=fp, stderr=fp)
+        stop_time = str(dt.datetime.now())
+
+        state, comment = parse_compare_log( results, tool, testid )
+        update_db( db, tool, testid, state, comment, end_test=stop_time )
+
+    db.close()
+
+    with open( timestamp, "w") as fp:
+        fp.write( start_time+"\n")
+        fp.write( test_stop+"\n")
+        fp.write( stop_time+"\n")
+
+    
+    
+if __name__ == '__main__':
+    """
+    Setup output directories
+    """
+    
+
+    if len(sys.argv) < 3:
+        print ("Usage: {} baselinedir outputdir [tool [tests] ]".format(os.path.basename( sys.argv[0] )))
+        sys.exit(1)
+
+    ct_res = os.environ["CIAOTEST_RESULTS"]
+
+    baseline_dir = sys.argv[1]
+    while baseline_dir.endswith("/"):  baseline_dir=baseline_dir[:-1]
+    if not baseline_dir == "none":
+        if not os.path.isdir( os.path.join( ct_res, baseline_dir )):
+            raise IOError("The baseline directory must already exist.  Use 'none' to skip comparison")
+            
+    output_dir = sys.argv[2]
+    while output_dir.endswith("/"):  output_dir=output_dir[:-1]    
+    if not os.path.isdir( os.path.join( ct_res, output_dir )):
+        os.makedirs( os.path.join( ct_res, output_dir ) )
+
+    diffdir = os.path.join( ct_res, "{}-{}".format( baseline_dir, output_dir ))
+    if not os.path.isdir( diffdir ):
+        os.makedirs( diffdir )
+
+    # We run from the diffdir since that's where the compare_results
+    # script is expecting.  The run script cd's where it needs to.    
+    os.chdir( diffdir )
+
+
+    if len(sys.argv) >= 4 and '-u' == sys.argv[3]:
+        update_mode = True
+        sys.argv.pop(3)
+    else:
+        update_mode = False
+
+    test_list = list_tests()
+
+
+    # Setup the database
+    db = connect()
+    create_db(db, test_list, update=update_mode )
+    db.close()
+    
+    import time as time
+    time.sleep(10)
+
+
+    # Setup the parallel processing.  Add tasks to the queue
+    from ciao_contrib._tools.taskrunner import TaskRunner
+    taskrunner = TaskRunner()
+
+    for tt in test_list:
+        task_name = "{}_{}".format( tt[0], tt[1] )
+        
+        needs_path = os.path.join( ct_res, output_dir, tt[0] )
+        if not os.path.isdir(needs_path ):
+            print ("Making dir {}".format(needs_path))
+            os.makedirs( needs_path )
+
+        taskrunner.add_task( task_name, "", run_test, tt[0], tt[1], output_dir, baseline_dir )
+
+    # Run tasks in parallel
+    taskrunner.run_tasks(processes=18) 
+
+    # Report results
+    report( )
+
+

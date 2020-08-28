@@ -1,0 +1,7 @@
+# Write warning message on stderr
+
+function ct_warning {
+  typeset message="$*"
+  print "Warning: $message" >&2
+}
+

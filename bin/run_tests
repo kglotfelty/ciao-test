@@ -1,0 +1,264 @@
+#!/usr/bin/env ksh 
+
+#
+# Run tests and create a result set
+#
+# Usage:
+#    run_tests resultset
+#    run_tests resultset tool
+#    run_tests resultset 'toolname_regexp'
+#    run_tests resultset tool test ...
+#
+#    Options:
+#        -f       Force overwrite of existing results
+#
+
+TERM=linux
+
+# Disallow uninitialized variables
+set -o nounset
+
+# Use "ct" compound variable
+ct_define_ct
+
+# Store script name and command line
+progname=${0##*/}
+cmdline="$progname ${*:-""}"
+
+USAGE="Usage: $progname [-f] resultset
+       $progname [-f] resultset tool
+       $progname [-f] resultset 'toolname_regexp'
+       $progname [-f] resultset tool test ..."
+
+# Process options
+while getopts ":f" opt
+do
+  case $opt in
+    f )  overwrite=1 ;;
+    # Die on invalid option
+    \? )  ct_message "$USAGE"
+          exit 2 ;;
+  esac
+done
+shift $(($OPTIND - 1))
+
+# Check usage
+if [[ $# == 0 ]]; then
+  ct_message "$USAGE"
+  exit 2
+fi
+
+# Process first argument (name of result set)
+
+# Remove trailing slash (if present) and shift off
+# first argument so that remainder of args can be
+# passed to ct_get_tests
+resultset=${1%/}
+shift
+
+# Set output directory
+resultdir=$CIAOTEST_RESULTS/$resultset
+
+# Get tests
+typeset -A tests
+if ! ct_get_tests tests ${*:-""}
+then
+  # Bad syntax or nonexistent tests, so die
+  exit 1
+fi
+
+# Check CIAO setup and set environment variables to avoid
+# using user parameter and configuration files; die if
+# there are problems
+if ! ct_check_ciao
+then
+  exit 1
+fi
+
+# Prepare result directory for test runs
+
+if [[ ! -d $resultdir ]]; then
+  # New result set, so make root directory; die on failure
+  if ! mkdir -p $resultdir
+  then
+    ct_error "cannot create directory $resultdir"
+    exit 1
+  fi
+elif [[ -e $resultdir/${ct.run} ]]; then
+  # Found a RUN file (meaning someone is currently making this
+  # result set), so die
+  #####ct_error "$resultset is already running"
+  #####exit 1
+  echo "Sure, tests are already running"
+elif [[ -e $resultdir/${ct.lock} && ${overwrite:-0} == 0 ]]; then
+  # LOCK file exists and "-f" was not specified, so die
+  ct_error "$resultset: lock file exists (use -f to override)"
+  exit 1
+else
+  # Either there's no LOCK or "-f" was given, so delete old
+  # results; die on failure
+  if ! rm -f $resultdir/${ct.lock} || ! ct_delete_results $resultset tests
+  then
+    ct_error "cannot delete old results in $resultdir"
+    exit 1
+  fi
+fi
+
+# Create read-only lock file 
+###cd $resultdir
+###date > ${ct.run}
+###chmod -w ${ct.run}
+
+# Create or append to info file
+{
+  date
+  print_config
+  print "Command line: \"$cmdline\"\n"
+} >> ${ct.info}
+
+# Set pipeline exit status to that of last command
+# to fail (so tests that use pipelines, e.g. with
+# grep, will (hopefully) report a proper exit status)
+set -o pipefail
+
+for tool in ${!tests[@]}
+do
+  # Create directory for this tool's test results (if it
+  # doesn't exist already); die on failure
+
+  tooldir=$resultdir/$tool
+
+  if [[ ! -d $tooldir ]]; then
+    if ! mkdir $tooldir
+    then
+      ct_error "cannot create directory $tooldir"
+      exit 1
+    fi
+  fi
+
+  # Set directory for input files
+  export CT_INDIR=$CIAOTEST_INPUT/$tool
+
+  # Run tests for this tool
+
+  for test in ${tests[$tool]}
+  do
+    ct_message "Running ${tool}/${test} ... \c"
+	# '\c' suppresses newline
+
+    # Set names of ".MAIN" and ".AUX" files for this test
+    testfile=$CIAOTEST_TESTS/$tool/${test}.${ct.main}
+    auxfile=${testfile%.${ct.main}}.${ct.aux}
+
+    # Create sub-directory for results of this test; die
+    # on failure
+    testdir=$tooldir/$test
+    if ! mkdir $testdir
+    then
+      ct_error "cannot create directory $testdir"
+      exit 1
+    fi
+
+    # Set user parameter directory to $testdir so that
+    # any parameter file written by this test isn't used
+    # by another test
+    export PFILES="${PFILES/*;/${testdir};}"
+    export ASCDS_WORK_PATH=$testdir
+
+    # Change to test output directory
+    cd $testdir
+
+    # Create test info file
+    {
+      date
+      print_config
+    } >> ${ct.testinfo}
+
+    # Run test, redirecting stdout and stderr to LOG file;
+    # execute test files in subshells so that they can't
+    # alter state of this script, e.g. overwrite a local
+    # variable
+
+    if ( . $testfile ) > ${ct.log} 2>&1
+
+    then
+
+  # Nick's cludgy way of filtering junk out
+  # of the LOG file:
+  
+  grep -a -v HISTNUM ${ct.log} > erase
+  mv erase LOG
+  sed -e 's/(CIAO.*):/(CIAO):/' LOG | \
+   sed "s,$PWD,PWD,g" | \
+   sed "s,${ASCDS_INSTALL},INSTALL,g" | \
+   sed "s,${CALDB},CALDB,g" | \
+   sed "s,INSTALL/CALDB,CALDB,g" | \
+   sed "s,${CIAOTEST_INPUT},CT_INPUT,g" | \
+   sed "s,${CIAOTEST_RESULTS},CT_RESULTS,g" > erase 
+  mv erase ${ct.log}  
+  
+
+      # Main test ran successfully, so run auxilary file
+      if [[ -e $auxfile ]]; then
+        ( . $auxfile ) >> ${ct.log} 2>&1
+ 
+  grep -a -v HISTNUM ${ct.log} > erase
+  mv erase LOG
+  sed -e 's/(CIAO.*):/(CIAO):/' LOG | \
+   sed "s,$PWD,PWD,g" | \
+   sed "s,${ASCDS_INSTALL},INSTALL,g" | \
+   sed "s,${CALDB},CALDB,g" | \
+   sed "s,${CIAOTEST_INPUT},CT_INPUT,g" | \
+   sed "s,${CIAOTEST_RESULTS},CT_RESULTS,g" > erase 
+  mv erase ${ct.log}
+
+     fi
+      ct_message "Done"
+    else
+      # Main test had problems, so store exit status and
+      # issue warning
+      print $? > ${ct.fail}
+      ct_message ""  # Add newline
+      ct_warning "tool returned non-zero exit status"
+
+  grep -a -v HISTNUM ${ct.log} > erase
+  mv erase LOG
+  sed -e 's/(CIAO.*):/(CIAO):/' LOG | \
+   sed "s,${ASCDS_INSTALL},INSTALL,g" | \
+   sed "s,${CALDB},CALDB,g" | \
+   sed "s,${CIAOTEST_INPUT},CT_INPUT,g" | \
+   sed "s,${CIAOTEST_RESULTS},CT_RESULTS,g" > erase 
+  mv erase ${ct.log}
+#  mv ${ct.log} ${resultset}.log ## this erases the LOG file upon 
+				 ## non-zero exit status, which we don't 
+				 ## want it to do
+  echo "tool returns non-zero exit status" >> ${ct.log}
+
+    fi
+
+    # Add test to list of complete tests
+    print "$tool $test" >> ${resultdir}/${ct.complete}
+
+    echo "Time test completed: " `date` >> INFO
+
+  done 
+done 2>&1 |tee ${resultset}.log #prints pass/fail of each test displayed 
+                                #on screen to file
+
+
+
+  # Back to Chris' prettier code...
+
+# Rename lock file to indicate run is finished; also remove
+# list of complete tests, since it's no longer useful
+cd $resultdir
+###mv ${ct.run} ${ct.lock}
+###rm -f ${ct.complete}
+
+echo "Ended: " `date` >> ${ct.info}
+
+
+# Indicate success
+ct_message "All tests complete"
+exit 0
+

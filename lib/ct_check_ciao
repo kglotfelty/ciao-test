@@ -1,0 +1,28 @@
+# Check for CIAO installation and set environment variables
+# to avoid using user parameter and configuration files;
+# also set CIAO version variable for use in tests
+
+function ct_check_ciao {
+  # Die if ASCDS_INSTALL or PFILES isn't set
+  if [[ ${ASCDS_INSTALL:-0} == 0 || ${PFILES:-0} == 0 ]]; then
+    ct_error "no CIAO installation found"
+    return 1
+  fi
+
+  # Replace any user parameter-file directories in PFILES
+  # with /dev/null (so that old parameter files aren't
+  # used in any of the tests)
+  export PFILES="${PFILES/*;/'/dev/null;'}"
+
+  # Avoid using user configuration files for ChIPS and
+  # Sherpa
+  export CHIPSRC=/dev/null
+  export SHERPARC=/dev/null
+  export SHERPA_STATE_RC=/dev/null
+
+  # Store CIAO version number
+  export CT_CIAOVER=$(cat $ASCDS_INSTALL/VERSION | cut -d" " -f2)
+
+  return 0
+}
+

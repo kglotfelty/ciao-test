@@ -1,0 +1,7 @@
+# Write error message on stderr
+
+function ct_error {
+  typeset message="${*:-"cannot perform requested operation"}"
+  print "Error: $message" >&2
+}
+

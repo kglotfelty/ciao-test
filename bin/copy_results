@@ -1,0 +1,173 @@
+#!/usr/bin/env ksh
+
+
+#
+# Copy specified results from one result set to another
+#
+# Usage:
+#    copy_results source_set dest_set
+#    copy_results source_set dest_set tool
+#    copy_results source_set dest_set 'toolname_regexp'
+#    copy_results source_set dest_set tool test ...
+#
+#    Options:
+#        -f   Force overwrite of locked results
+#
+
+# Disallow uninitialized variables
+set -o nounset
+
+# Use "ct" compound variable
+ct_define_ct
+
+# Store script name and command line
+progname=${0##*/}
+cmdline="$progname ${*:-""}"
+
+USAGE="Usage: $progname [-f] source_set dest_set
+       $progname [-f] source_set dest_set tool
+       $progname [-f] source_set dest_set 'toolname_regexp'
+       $progname [-f] source_set dest_set tool test ..."
+
+# Process options
+while getopts ":f" opt
+do
+  case $opt in
+    f  )  overwrite=1 ;;
+    # Die on invalid option
+    \? )  ct_message "$USAGE"
+	  exit 2 ;;
+  esac
+done
+shift $(($OPTIND - 1))
+
+# Check usage
+if (( $# < 2 )); then
+  ct_message "$USAGE"
+  exit 2
+fi
+
+# Store names of result sets
+sourceset=${1%/}  # Remove trailing slash (if present)
+sourcedir=$CIAOTEST_RESULTS/$sourceset
+destset=${2%/}  # Remove trailing slash (if present)
+destdir=$CIAOTEST_RESULTS/$destset
+shift 2
+
+# Die if source set doesn't exist
+if [[ ! -d $sourcedir ]]; then
+  ct_error "cannot find result set $sourceset"
+  exit 1
+fi
+
+# Get tests
+typeset -A tests
+if ! ct_get_tests tests ${*:-""}
+then
+  # Bad syntax or nonexistent tests, so die
+  exit 1
+fi
+
+# Prepare destination directory
+
+if [[ ! -d $destdir ]]; then
+  # Directory doesn't exist, so make it; die on failure
+  if ! mkdir $destdir
+  then
+    ct_error "cannot create directory $destdir"
+    exit 1
+  fi
+
+  # Create read-only lock file 
+  date > $destdir/${ct.lock}
+  chmod -w $destdir/${ct.lock}
+elif [[ -e $destdir/${ct.lock} && ${overwrite:-0} == 0 ]]; then
+  # Lock file exists and "-f" was not specified, so die
+  ct_error "$destset: lock file exists (use -f to override)"
+  exit 1
+fi
+
+# If tests are still running, issue warning and confirm
+# copy
+
+if [[ -e $destdir/${ct.run} ]]; then
+  ct_warning "$destset is still running!"
+  ct_message "Copying now may produce unexpected and undesirable results"
+  read input?'Are you sure you want to proceed (yes/no)? '
+
+  if [[ $input != @(y|yes) ]]; then
+    # Response wasn't "y" or "yes", so abort
+    exit 0
+  fi
+fi
+
+# Append to history file
+{
+   date
+   print "Command line: \"$cmdline\"\n"
+} >> $destdir/${ct.info}
+
+# Copy the results
+
+(( numcopied = 0 ))
+
+for tool in ${!tests[@]}
+do
+  # Don't issue error if source results don't exist
+  # because we don't know what should be in the source
+  # set, e.g. it may contain only a limited subset
+  # of the possible tests
+
+  # If there are no source results for this tool, move
+  # on to next tool
+  if [[ ! -d $sourcedir/$tool ]]; then
+    continue
+  fi
+
+  # Create destination directory for this tool's test
+  # results (if it doesn't exist already); die on failure
+  if [[ ! -d $destdir/$tool ]]; then
+    if ! mkdir $destdir/$tool
+    then
+      ct_error "cannot create directory $destdir/$tool"
+      exit 1
+    fi
+  fi
+
+  # Copy result directories for individual tests
+
+  for test in ${tests[$tool]}
+  do
+    if [[ -d $sourcedir/$tool/$test ]]; then
+      ct_message "Copying $tool/$test ..."
+
+      if ! rm -rf $destdir/$tool/$test
+      then
+	# Can't remove old results, so die
+        ct_error "$destset: $tool/$test: cannot delete old results"
+        exit 1
+      fi
+
+      if ! cp -r $sourcedir/$tool/$test $destdir/$tool
+      then
+	# Copy failed, so die
+	ct_error "cannot copy $tool/$test to result set $destset"
+	exit 1
+      fi
+
+      (( numcopied++ ))
+    fi
+  done
+done
+
+# If there was nothing to copy, notify user;
+# otherwise, indicate completion
+if (( numcopied == 0 )); then
+  ct_message "No results to copy"
+else
+  ct_message "Done"
+fi
+
+# Indicate success
+exit 0
+

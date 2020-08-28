@@ -1,0 +1,63 @@
+#!/usr/bin/env ksh
+
+set -o nounset
+
+progname=${0##*/}
+logfile=$1
+commands=$2
+shift 2
+
+script="$*"
+
+tmpdir="/tmp/${progname}_$$"
+
+if ! mkdir $tmpdir
+then
+  print "Error: cannot create temporary directory $tmpdir" >&2
+  exit 1
+fi
+
+for cmd in $commands
+do
+  realcmd=$(whence -p $cmd)
+
+  if [[ -z $realcmd ]]; then
+    realcmd="echo $cmd"
+  elif [[ $realcmd != /* ]]; then
+    realcmd="$PWD/$realcmd"
+  fi
+
+  print "#!/usr/bin/env ksh
+
+{
+  print -n \"$cmd \"
+
+  if [[ -n \$(whence -p paccess) && -n \$(paccess $cmd) ]]; then
+    pline $cmd \"\$@\"
+  else
+    print \"\$@\"
+  fi
+
+  print \"\"
+} >> $logfile
+
+$realcmd \"\$@\"
+" > $tmpdir/$cmd
+
+  chmod +x $tmpdir/$cmd
+done
+
+# DEBUG
+#cat $tmpdir/*
+
+export PATH="$tmpdir:$PATH"
+
+#for cmd in $commands
+#do
+#  whence -p $cmd
+#done
+
+$script
+
+rm -rf $tmpdir
+

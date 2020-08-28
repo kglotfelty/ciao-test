@@ -1,0 +1,81 @@
+A short note about what the executables do:
+===========================================
+
+
+parallel_run_and_compare
+========================
+-Usage: run_and_compare baselineset testset [tests]
+Used to run and compare a new regression test set to the baseline test
+set.
+
+The baseline can be set to 'none' to skip comparison.
+
+Individual tools and individual tests can be run as the other test tools.
+
+
+Calls:
+list_tests
+run_tests.kjg
+compare_results
+
+The 'serve_results' script can be used to monitor the progress
+of the test.
+
+
+
+serve_results
+=============
+-Usage: serve_results baselineset-testset [port]
+
+This application creates a small web server that can be used to monitor
+the regression tests run by the parallel_run_and_compare test.
+
+This script should be started in a separate window using the same
+setup at parallel_run_and_compare.  Once the script is started,
+you should pointer your web browser to the URL provided, usually
+
+http://localhost:8080/
+
+
+Calls:
+none
+
+
+
+run_and_compare
+===============
+-Usage: run_and_compare baselineset testset [tests]
+Used to run and compare a new regression test set to the baseline test
+set.
+
+Calls:
+
+smart_compare: on baseline and test sets
+compare_results: on the compare.dat file written out to compare.log
+
+
+
+smart_compare
+=============
+-Usage: smart_compare baselineset testset [tests]
+Takes smart_diff output and creates an exit status log for each test.
+
+creates scompare directory
+creates compare.dat
+
+Calls:
+smart_diff
+
+
+compare_results
+=============
+compare_results -d compare.dat
+
+creates compare.log file with pass/fail/summary info
+
+
+smart_diff
+===========
+-Usage: smart_diff [-d] [-i] [-l log] /path1/tool/test/file /path2/tool/test/file
+The big comparison script.  Edits can be made here to the diff
+process.
