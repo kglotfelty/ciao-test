@@ -20,9 +20,30 @@ tcsh% source setup.csh
 bash$ source setup.sh
 ```
 
+## Example session
+
+Here is an example of how to run the standard suite of regression tests
+
+First be sure to setup for CIAO and MARX
+
+```bash
+source /exort/ciaox/bin/ciao.csh
+source /exort/ciaox/marx-*/setup_marx.csh
+```
+
+and then run the tests
+
+```bash
+source setup.csh
+cd $CIAOTEST_RESULTS
+parallel_run_and_compare ciao_linux64_baseline_repro ciaox_20200828_Linux &
+serve_results ciao_linux64_baseline_repro-ciaox_20200828_Linux &
+gio open http://localhost:8080
+```
+
 ## Summary of tasks
 
-
+This is a summary of the high level tasks.
 
 ### `parallel_run_and_compare`
 
@@ -73,7 +94,23 @@ http://localhost:8080/
 
 Calls:
 
-none
+- none
+
+### `run_tests`
+
+Usage 
+
+```bash
+run_tests outdir [tests]
+```
+
+Used to run the test scripts (ie the `*.MAIN` files).  Data are not
+compared|checked.
+
+Calls:
+
+- none
+
 
 
 ### `run_and_compare`
@@ -135,11 +172,30 @@ The big comparison script.  Edits can be made here to the diff
 process.
 
 
+## Specifying individual tests
+
+Users can specify individual tests in the following ways:
+
+```bash
+run_tests outdir dmlist
+```
+
+will run all the `dmlist` tests.
 
 
+```bash
+run_tests outdir dmlist 01
+```
 
+will run the single `dmlist` `01.MAIN` test.
 
+```bash
+run_tests outdir "file(/path/to/my.lis)"
+```
 
+Individual tests can be specified in a list file.  Each line is a 
+different test and should contain the tool name and test-id separated 
+by white space.  You need to use the full path name to the list file.
 
 
 
