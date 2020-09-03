@@ -227,15 +227,14 @@ if __name__ == '__main__':
         sys.exit(1)
 
     ct_res = os.environ["CIAOTEST_RESULTS"]
-
-    baseline_dir = sys.argv[1]
-    while baseline_dir.endswith("/"):  baseline_dir=baseline_dir[:-1]
-    if not baseline_dir == "none":
-        if not os.path.isdir( os.path.join( ct_res, baseline_dir )):
-            raise IOError("The baseline directory must already exist.  Use 'none' to skip comparison")
+    baseline_dir = sys.argv[1].rstrip("/")
+    
+    if baseline_dir.lower() != "none":
+        baseline_dir = "baseline"
+        # ~ if not os.path.isdir( os.path.join( ct_res, baseline_dir )):
+            # ~ raise IOError("The baseline directory must already exist.  Use 'none' to skip comparison")
             
-    output_dir = sys.argv[2]
-    while output_dir.endswith("/"):  output_dir=output_dir[:-1]    
+    output_dir = sys.argv[2].rstrip("/")
     if not os.path.isdir( os.path.join( ct_res, output_dir )):
         os.makedirs( os.path.join( ct_res, output_dir ) )
 

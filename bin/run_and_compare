@@ -19,7 +19,7 @@ baselineset=${1%/}   # Remove trailing slash (if present)
 testset=${2%/}       # Remove trailing slash (if present)
 shift 2
 
-resdir=${baselineset}-${testset}
+resdir=baseline-${testset}
 logfile=${testset}.log
 complog=compare.lis
 
@@ -31,13 +31,14 @@ then
   exit 99
 fi
 
-if [[ ! -d $CIAOTEST_RESULTS/$baselineset ]]; then
-  do_error "result set $baselineset does not exist"
+##if [[ ! -d $CIAOTEST_RESULTS/$baselineset ]]; then
+##  do_error "result set $baselineset does not exist"
 ##elif [[ -d $CIAOTEST_RESULTS/$testset ]]; then
 ##  do_error "result set $testset already exists"
 ##elif [[ -d $resdir ]]; then
 ##  do_error "result directory $resdir already exists"
-elif ! mkdir -p $resdir
+
+if ! mkdir -p $resdir
 then
   do_error "unable to create result directory $resdir"
 fi
@@ -75,6 +76,6 @@ do
 done
 
 
-ln -s $CIAOTEST_RESULTS/$baselineset $baselineset
-ln -s $CIAOTEST_RESULTS/$testset $testset
+ln -s $CIAOTEST_REPOSITORY $baselineset > /dev/null 2>&1
+ln -s $CIAOTEST_RESULTS/$testset $testset > /dev/null 2>&1
 

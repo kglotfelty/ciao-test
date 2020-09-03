@@ -15,9 +15,9 @@
 #                      'command leftfile rightfile'
 #        -d file       Use specified "raw" report file from previous run
 #        -f file       Compare specified file instead of log
-#	 -h            Produce HTML report (NOT IMPLEMENTED)
-#	 -r            Produce "raw" report (for further processing)
-#	 -s            Produce summary report
+#        -h            Produce HTML report (NOT IMPLEMENTED)
+#        -r            Produce "raw" report (for further processing)
+#        -s            Produce summary report
 #
 
 # Disallow uninitialized variables
@@ -40,9 +40,9 @@ USAGE="Usage: $progname resultset1 resultset2
                        'command leftfile rightfile'
          -d file       Use specified "raw" report file from previous run
          -f file       Compare specified file instead of log
-	 -h            Produce HTML report (NOT IMPLEMENTED)
-	 -r            Produce \"raw\" report (for further processing)
-	 -s            Produce summary report"
+         -h            Produce HTML report (NOT IMPLEMENTED)
+         -r            Produce \"raw\" report (for further processing)
+         -s            Produce summary report"
 
 # Process options
 while getopts ":c:d:f:hrs" opt
@@ -56,7 +56,7 @@ do
     s  )  summary=1 ;;
     # Die on invalid option
     \? )  ct_message "$USAGE"
-	  exit 2 ;;
+          exit 2 ;;
   esac
 done
 shift $(($OPTIND - 1))
@@ -111,15 +111,17 @@ else
   
   # Store and verify names of result sets
   
-  leftset=${1%/}  # Remove trailing slash (if present)
-  leftdir=$CIAOTEST_RESULTS/$leftset
+  #~ leftset=${1%/}  # Remove trailing slash (if present)
+  #~ leftdir=$CIAOTEST_RESULTS/$leftset
+
+  leftdir=${CIAOTEST_REPOSITORY%/}
+
   rightset=${2%/}  # Remove trailing slash (if present)
   rightdir=$CIAOTEST_RESULTS/$rightset
   shift 2
 
-  for rset in $leftset $rightset
+  for rdir in $leftdir $rightdir
   do
-    rdir=$CIAOTEST_RESULTS/$rset
   
     # Die if result set doesn't exist
     if [[ ! -d $rdir ]]; then
@@ -156,8 +158,8 @@ else
   integer fail=0       # Number of failed tests (results differ
                        # between left and right result sets)
   integer nocompare=0  # Number of tests for which comparison failed
-  		       # (files not found, or comparison command
-  		       # returned exit status >1)
+                       # (files not found, or comparison command
+                       # returned exit status >1)
   
   for tool in ${!tests[@]}
   do
@@ -172,7 +174,7 @@ else
   
     for test in ${tests[$tool]}
     do
-      lefttest=$leftdir/$tool/$test
+      lefttest=$leftdir/$tool/baseline/$test
       leftfile=$lefttest/$file
       righttest=$rightdir/$tool/$test
       rightfile=$righttest/$file
@@ -201,23 +203,23 @@ else
         # Check if file to compare exists
   
         if [[ -e $tfile ]]; then
-  	# File exists
-  	report+="1 "
+        # File exists
+        report+="1 "
         else
-  	# File not found; update count of failed
-  	# comparisons
-  	report+="0 "
-  	(( nocompare++ ))
+        # File not found; update count of failed
+        # comparisons
+        report+="0 "
+        (( nocompare++ ))
         fi
 
         # Record exit status of test
   
         if [[ -e $tdir/${ct.fail} ]]; then
-  	# Found EXIT_STATUS file, so record its contents
-  	report+="$(< $tdir/${ct.fail}) "
+        # Found EXIT_STATUS file, so record its contents
+        report+="$(< $tdir/${ct.fail}) "
         else
-  	# No EXIT_STATUS found, so use status 0
-  	report+="0 "
+        # No EXIT_STATUS found, so use status 0
+        report+="0 "
         fi
       done
   
@@ -243,9 +245,9 @@ else
         #   >1  An error occurred
         #
         if (( $exitstat == 1 )); then
-  	(( fail++ ))
+        (( fail++ ))
         elif (( $exitstat > 1 )); then
-  	(( nocompare++ ))
+        (( nocompare++ ))
         fi
       else
         # At least one file not found, so report exit
@@ -350,14 +352,14 @@ else
 
       # Print results of comparison
       if (( $cmpresult == 0 )); then
-	# No differences found
-	print -n "pass"
+        # No differences found
+        print -n "pass"
       elif (( $cmpresult == 1 )); then
-	# Differences found
-	print -n "FAIL"
+        # Differences found
+        print -n "FAIL"
       else
-	# Comparison failed
-	print -n "N/A"
+        # Comparison failed
+        print -n "N/A"
       fi
 
       # Add padding
@@ -365,19 +367,19 @@ else
 
       # If files weren't found, add comment
       if ! (( ${filefound.left} )); then
-	print -n "FNF[$leftset]  "
+        print -n "FNF[$leftset]  "
       fi
       if ! (( ${filefound.right} )); then
-	print -n "FNF[$rightset]  "
+        print -n "FNF[$rightset]  "
       fi
 
       # If tests returned non-zero exit status, add
       # comment
       if (( ${exitstat.left} )); then
-	print -n "ES(${exitstat.left})[$leftset]  "
+        print -n "ES(${exitstat.left})[$leftset]  "
       fi
       if (( ${exitstat.right} )); then
-	print -n "ES(${exitstat.right})[$rightset]  "
+        print -n "ES(${exitstat.right})[$rightset]  "
       fi
 
       # Add blank line

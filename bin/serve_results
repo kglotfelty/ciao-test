@@ -156,7 +156,7 @@ def display_test_tolerance( tool ):
     """
     Display the tolerance file
     """
-    dfile = "{}/{}.tol".format( os.environ["CIAOTEST_TOLFILES"], tool)
+    dfile = "{}/{}/{}.tol".format( os.environ["CIAOTEST_REPOSITORY"], tool, tool)
     if not os.path.exists( dfile ):
         response.content_type = "text/plain"
         return "Missing "+dfile
@@ -184,7 +184,7 @@ def display_test_sources( tool ):
     """
     Display the tolerance file
     """
-    dfile = "{}/{}/sources.txt".format(os.environ["CIAOTEST_TESTS"], tool) 
+    dfile = "{}/{}/tests/sources.txt".format(os.environ["CIAOTEST_REPOSITORY"], tool) 
     if not os.path.exists( dfile ):
         response.content_type = "text/plain"
         return "Missing "+dfile 
@@ -217,7 +217,7 @@ def display_test_script( tool, testid, main_or_aux ):
     TODO: There are javascript pkgs that show line numbers/
     syntax highlighting.
     """
-    dfile = "{}/{}/{}.{}".format(os.environ["CIAOTEST_TESTS"], tool, testid, main_or_aux )
+    dfile = "{}/{}/tests/{}.{}".format(os.environ["CIAOTEST_REPOSITORY"], tool, testid, main_or_aux )
     if not os.path.exists( dfile ):
         response.content_type = "text/plain"
         return "Missing "+dfile
@@ -289,15 +289,15 @@ def display_diff_file( tool, testid ):
     hdr = hdr + """Test Script: <a href="/test/{tool}/{testid}/MAIN">{testid}.MAIN</a>
     """.format(tool=tool,testid=testid)
 
-    auxfile = "{}/{}/{}.AUX".format(os.environ["CIAOTEST_TESTS"], tool, testid)
+    auxfile = "{}/{}/tests/{}.AUX".format(os.environ["CIAOTEST_REPOSITORY"], tool, testid)
     if os.path.exists( auxfile ):
         hdr = hdr + """ <a href="/test/{tool}/{testid}/AUX">{testid}.AUX</a>""".format(tool=tool,testid=testid)
 
-    dfile = "{}/{}.tol".format( os.environ["CIAOTEST_TOLFILES"], tool)
+    dfile = "{}/{}/{}.tol".format( os.environ["CIAOTEST_REPOSITORY"], tool, tool)
     if os.path.exists( dfile ):
         hdr = hdr + """ <a href="/test/tolerance/{tool}">{tool}.tol</a>""".format(tool=tool)
 
-    dfile = "{}/{}/sources.txt".format(os.environ["CIAOTEST_TESTS"], tool) 
+    dfile = "{}/{}/tests/sources.txt".format(os.environ["CIAOTEST_REPOSITORY"], tool) 
     if os.path.exists( dfile ):
         hdr = hdr + """ <a href="/test/sources/{tool}">sources.txt</a>""".format(tool=tool)
 
@@ -369,7 +369,7 @@ def serve_tablesorter_js(script):
     """
     Serve the javascript to update page
     """
-    with open( ROOT+"/tablesorter/{}.js".format(script), "r") as fp:
+    with open( ROOT+"/tablesorter/{}.js".format(script), "rb") as fp:
         js = fp.read()
     
     response.content_type = "text/javascript"

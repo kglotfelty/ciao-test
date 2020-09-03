@@ -7,31 +7,31 @@
 
 
 #
-# The following declarations will differ for each
-# local installation
 #
-ROOT=/proj/sds/Regression
+#
+set ROOT=/proj/sds/Regression
 
-# Installation directory for CIAOTEST software
-export CIAOTEST_INSTALL=${ROOT}/ciaotest
+# Test inputs:
+#
+#  ${CIAOTEST_REPOSITORY}/${tool}/tests
+#  ${CIAOTEST_REPOSITORY}/${tool}/input
+#  ${CIAOTEST_REPOSITORY}/${tool}/baseline
+#  ${CIAOTEST_REPOSITORY}/${tool}/${tool}.tol
+#
 
-# Directory containing test files
-export CIAOTEST_TESTS=${ROOT}/current_regtest/tests
+export CIAOTEST_REPOSITORY=${ROOT}/goober
 
-# Directory containing input files for tests
-export CIAOTEST_INPUT=${ROOT}/current_regtest/input
-
-# Directory to which test results are written
+#
+# Output Directory to which test results are written
+#
 export CIAOTEST_RESULTS=${ROOT}/results
 
-# Directory containing dmdiff tolerance files (optional)
-export CIAOTEST_TOLFILES=${ROOT}/current_regtest/tolfiles
 
 
 #
-# The following declarations are the same for all
-# installations
+# Installation directory for CIAOTEST software
 #
+export CIAOTEST_INSTALL=${ROOT}/ciao-test
 
 # Directory containing executable CIAOTEST scripts
 export CIAOTEST_BIN=$CIAOTEST_INSTALL/bin

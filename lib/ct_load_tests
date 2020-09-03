@@ -62,7 +62,7 @@ function ct_load_tests {
     test=${line[1]}
 
     # Die if test doesn't exist
-    if [[ ! -e $CIAOTEST_TESTS/$tool/${test}.${ct.main} ]]; then
+    if [[ ! -e $CIAOTEST_REPOSITORY/$tool/tests/${test}.${ct.main} ]]; then
       ct_error "$tool/$test: test not found"
       return 1
     fi

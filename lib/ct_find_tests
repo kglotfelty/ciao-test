@@ -54,7 +54,7 @@ function ct_find_tests {
 
   typeset dirlist      # Names of directories matching toolname expression
 
-  if ! dirlist=$(eval print $CIAOTEST_TESTS/$toolnames 2> /dev/null)
+  if ! dirlist=$(eval print $CIAOTEST_REPOSITORY/$toolnames 2> /dev/null)
       # Redirect any error messages from eval to /dev/null
   then
     ct_error "bad toolname expression"
@@ -63,7 +63,7 @@ function ct_find_tests {
 
   # Extract directory names from $dirlist and place them in
   # $tooldirlist (this filters out the names of non-directory
-  # files living in $CIAOTEST_TESTS)
+  # files living in $CIAOTEST_REPOSITORY/tests)
 
   typeset dir          # Name of current directory to process
   typeset tooldirlist  # Valid tool directories found in $dirlist
@@ -101,7 +101,7 @@ function ct_find_tests {
       # No individual tests specified, so get all tests for current
       # tool
 
-      testfiles=$(ls $tooldir/*.${ct.main} 2> /dev/null)
+      testfiles=$(ls $tooldir/tests/*.${ct.main} 2> /dev/null)
 
       # If there are no tests for this tool, issue warning and
       # move on to next tool
@@ -124,12 +124,12 @@ function ct_find_tests {
 
       for test in $*
       do
-	if [[ -e ${tooldir}/${test}.${ct.main} ]]; then
+	if [[ -e ${tooldir}/tests/${test}.${ct.main} ]]; then
 	  # Test file found, so add test to list for this tool
 	  testnames+="$test "
 	else
 	  # No test file, so die
-	  ct_error "$tool/$test: test not found"
+	  ct_error "$tool/tests/$test: test not found"
 	  return 1
 	fi
       done

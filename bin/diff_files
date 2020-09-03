@@ -71,7 +71,7 @@ test=$4           # Test name
 
 nameref result=leftfile
 
-for result in leftfile rightfile
+for result in rightfile
 do
   # Die if the result set doesn't exist
   if [[ ! -d $CIAOTEST_RESULTS/$result ]]; then
@@ -84,6 +84,8 @@ do
   result=$CIAOTEST_RESULTS/$result/$tool/$test/$file
 
 done
+
+leftfile=$CIAOTEST_REPOSITORY/$tool/baseline/$test/$file
 
 
 # Verify that files to diff exist

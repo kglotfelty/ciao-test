@@ -131,14 +131,14 @@ do
   fi
 done
 
-tool=${leftdir%/*}
+tool=${rightdir%/*}
 tool=${tool##*/}	# Tool name
 
-test=${leftdir##*/}	# Test name
+test=${rightdir##*/}	# Test name
 
 if [[ ($test == $leftdir) || -z $tool ]]; then
   # Catch cases "/test/file", "test/file", "file"
-  ct_error "cannot extract tool and test names from string \"$leftfile\""
+  ct_error "cannot extract tool and test names from string \"$rightfile\""
   exit 99
 fi
 
@@ -148,11 +148,10 @@ fi
 #
 
 # Default tolerance file
-defaulttol=$CIAOTEST_TOLFILES/DEFAULT.tol
+defaulttol=$CIAOTEST_REPOSITORY/DEFAULT.tol
 
 # Tool-specific tolerance file
-tooltol=$CIAOTEST_TOLFILES/${tool}.tol 
-#tooltol=/data/sdsreg/current_regtest/DS_tolfiles/${tool}.tol
+tooltol=$CIAOTEST_REPOSITORY/${tool}/${tool}.tol 
 
 if [[ $usetooltolfile == 1 && -e $tooltol ]]; then
   # User didn't specify '-d' and tool-specific tolerance file exists,

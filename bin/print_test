@@ -61,7 +61,7 @@ done
 # Store and verify other arguments
 
 tool=$1
-tooldir=$CIAOTEST_TESTS/$tool
+tooldir=$CIAOTEST_REPOSITORY/$tool/tests
 test=$2
 testfile=$tooldir/${test}.${ct.main}
 
@@ -151,7 +151,7 @@ if [[ ${aux:-0} == 1 ]]; then
 fi
 
 # Replace '$CT_INDIR' with the appropriate path
-testlines=${testlines//@('$CT_INDIR'|'${CT_INDIR}')/"$CIAOTEST_INPUT/$tool"}
+testlines=${testlines//@('$CT_INDIR'|'${CT_INDIR}')/"$CIAOTEST_REPOSITORY/$tool/input"}
 
 # Print the test
 print - "$testlines"

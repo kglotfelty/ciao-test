@@ -137,17 +137,17 @@ do
   fi
 
   # Set directory for input files
-  export CT_INDIR=$CIAOTEST_INPUT/$tool
+  export CT_INDIR=$CIAOTEST_REPOSITORY/$tool/input
 
   # Run tests for this tool
 
   for test in ${tests[$tool]}
   do
     ct_message "Running ${tool}/${test} ... \c"
-	# '\c' suppresses newline
+        # '\c' suppresses newline
 
     # Set names of ".MAIN" and ".AUX" files for this test
-    testfile=$CIAOTEST_TESTS/$tool/${test}.${ct.main}
+    testfile=$CIAOTEST_REPOSITORY/$tool/tests/${test}.${ct.main}
     auxfile=${testfile%.${ct.main}}.${ct.aux}
 
     # Create sub-directory for results of this test; die
@@ -193,7 +193,7 @@ do
    sed "s,${ASCDS_INSTALL},INSTALL,g" | \
    sed "s,${CALDB},CALDB,g" | \
    sed "s,INSTALL/CALDB,CALDB,g" | \
-   sed "s,${CIAOTEST_INPUT},CT_INPUT,g" | \
+   sed "s,${CIAOTEST_REPOSITORY}/$tool/input,CT_INPUT/$tool,g" | \
    sed "s,${CIAOTEST_RESULTS},CT_RESULTS,g" > erase 
   mv erase ${ct.log}  
   
@@ -208,7 +208,7 @@ do
    sed "s,$PWD,PWD,g" | \
    sed "s,${ASCDS_INSTALL},INSTALL,g" | \
    sed "s,${CALDB},CALDB,g" | \
-   sed "s,${CIAOTEST_INPUT},CT_INPUT,g" | \
+   sed "s,${CIAOTEST_REPOSITORY}/$tool/input,CT_INPUT,g" | \
    sed "s,${CIAOTEST_RESULTS},CT_RESULTS,g" > erase 
   mv erase ${ct.log}
 
@@ -226,12 +226,12 @@ do
   sed -e 's/(CIAO.*):/(CIAO):/' LOG | \
    sed "s,${ASCDS_INSTALL},INSTALL,g" | \
    sed "s,${CALDB},CALDB,g" | \
-   sed "s,${CIAOTEST_INPUT},CT_INPUT,g" | \
+   sed "s,${CIAOTEST_REPOSITORY}/$tool/input,CT_INPUT,g" | \
    sed "s,${CIAOTEST_RESULTS},CT_RESULTS,g" > erase 
   mv erase ${ct.log}
 #  mv ${ct.log} ${resultset}.log ## this erases the LOG file upon 
-				 ## non-zero exit status, which we don't 
-				 ## want it to do
+                                 ## non-zero exit status, which we don't 
+                                 ## want it to do
   echo "tool returns non-zero exit status" >> ${ct.log}
 
     fi

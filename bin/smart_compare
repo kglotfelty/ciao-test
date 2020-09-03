@@ -23,15 +23,15 @@ testset=$2
 # test-selection info
 shift 2
 
-name1=${baselineset%/}
+#~ name1=${baselineset%/}
 name2=${testset%/}
-outdir=${name1}-${name2}-smartcompare
+outdir=baseline-${name2}-smartcompare
 #outdir=${progname}_data
 compfile=compare.dat
 
-if [[ ! -d $CIAOTEST_RESULTS/$baselineset ]]; then
-  do_error "result set $baselineset does not exist"
-elif [[ ! -d $CIAOTEST_RESULTS/$testset ]]; then
+#if [[ ! -d $CIAOTEST_RESULTS/$baselineset ]]; then
+#  do_error "result set $baselineset does not exist"
+if [[ ! -d $CIAOTEST_RESULTS/$testset ]]; then
   do_error "result set $testset does not exist"
 elif [[ -d $outdir ]]; then
   do_error "directory $outdir already exists"
@@ -60,7 +60,7 @@ done
 rm -f ${ct.complete}
 
 {
-  print "$CIAOTEST_RESULTS/$baselineset"
+  print "$CIAOTEST_REPOSITORY"
   print "$CIAOTEST_RESULTS/$testset"
   print "smart_diff"
 } > $compfile
