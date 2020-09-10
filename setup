@@ -27,29 +27,33 @@ setenv CIAOTEST_REPOSITORY ${ROOT}/goober
 setenv CIAOTEST_RESULTS ${ROOT}/results
 
 
-
 #
 # Installation directory for CIAOTEST software
 #
 setenv CIAOTEST_INSTALL ${ROOT}/ciao-test
 
+
+
+
+
 # Directory containing executable CIAOTEST scripts
-setenv CIAOTEST_BIN $CIAOTEST_INSTALL/bin
+set bin=$CIAOTEST_INSTALL/bin
 
 # Directory containing definitions of internal CIAOTEST functions
-setenv CIAOTEST_FUNCTIONS $CIAOTEST_INSTALL/lib
+set funcs=$CIAOTEST_INSTALL/lib
 
 # Set PATH appropriately
-setenv PATH "${CIAOTEST_BIN}:${CIAOTEST_FUNCTIONS}:${PATH}"
+set path = ( $bin $funcs $path )
 
 # Set FPATH so that ksh finds the functions defined in
 # $CIAOTEST_FUNCTIONS
 
 if (${?FPATH}) then
-  setenv FPATH "${CIAOTEST_FUNCTIONS}:${FPATH}"
+  setenv FPATH "${funcs}:${FPATH}"
 else
-  setenv FPATH "$CIAOTEST_FUNCTIONS"
+  setenv FPATH "$funcs"
 endif
 
 unset ROOT
-
+unset funcs
+unset bin

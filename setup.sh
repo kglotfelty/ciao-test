@@ -9,7 +9,7 @@
 #
 #
 #
-set ROOT=/proj/sds/Regression
+ROOT=/proj/sds/Regression
 
 # Test inputs:
 #
@@ -27,30 +27,33 @@ export CIAOTEST_REPOSITORY=${ROOT}/goober
 export CIAOTEST_RESULTS=${ROOT}/results
 
 
-
 #
 # Installation directory for CIAOTEST software
 #
 export CIAOTEST_INSTALL=${ROOT}/ciao-test
 
+
+
+
 # Directory containing executable CIAOTEST scripts
-export CIAOTEST_BIN=$CIAOTEST_INSTALL/bin
+bin=$CIAOTEST_INSTALL/bin
 
 # Directory containing definitions of internal CIAOTEST functions
-export CIAOTEST_FUNCTIONS=$CIAOTEST_INSTALL/lib
+funcs=$CIAOTEST_INSTALL/lib
 
 # Set PATH appropriately
-PATH="${CIAOTEST_BIN}:${CIAOTEST_FUNCTIONS}:${PATH}"
+PATH="${bin}:${funcs}:${PATH}"
 
 # Set FPATH so that ksh finds the functions defined in
 # $CIAOTEST_FUNCTIONS
 
 if test x$FPATH = x
 then
-  export FPATH="$CIAOTEST_FUNCTIONS"
+  export FPATH="$funcs"
 else
-  export FPATH="${CIAOTEST_FUNCTIONS}:${FPATH}"
+  export FPATH="${funcs}:${FPATH}"
 fi
 
 unset ROOT
-
+unset funcs
+unset bin
